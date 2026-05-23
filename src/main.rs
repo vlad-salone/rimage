@@ -378,9 +378,9 @@ fn main() {
             let file_count = files.iter().filter(|f| f.is_file()).count() as u64;
 
             if file_count == 0 {
-                eprintln!("No input files found. Check the file paths.");
+                log::error!("No input files found. Check the file paths.");
                 if log::log_enabled!(log::Level::Debug) {
-                    eprintln!("Resolved files: {files:#?}");
+                    log::debug!("Resolved files: {files:#?}");
                 }
                 return;
             }
@@ -676,7 +676,7 @@ fn main() {
             };
             let succeeded = state.results.len() as u64;
             if succeeded < file_count {
-                eprintln!(
+                log::error!(
                     "{}/{} file(s) failed. Run with `{}` for details.",
                     file_count - succeeded,
                     file_count,
