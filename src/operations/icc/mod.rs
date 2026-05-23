@@ -61,7 +61,13 @@ impl OperationsTrait for ApplyICC {
             (ColorSpace::ARGB, 16) => PixelFormat::ARGB_16,
             (ColorSpace::HSV, 8) => PixelFormat::HSV_8,
             (ColorSpace::HSV, 16) => PixelFormat::HSV_16,
-            _ => unreachable!("This should be handled in supported_colorspaces"),
+            (cs, depth) => {
+                return Err(ImageErrors::OperationsError(
+                    ImageOperationsErrors::GenericString(format!(
+                        "ICC profile application not supported for {cs:?} at {depth}-bit",
+                    )),
+                ));
+            }
         };
 
         let profile = self

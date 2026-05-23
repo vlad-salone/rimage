@@ -102,6 +102,11 @@ impl EncoderTrait for MozJpegEncoder {
         sink: T,
     ) -> Result<usize, ImageErrors> {
         let (width, height) = image.dimensions();
+        if image.is_animated() {
+            log::warn!(
+                "MozJpeg does not support animated images, only the first frame will be encoded"
+            );
+        }
         let data = &image.flatten_to_u8()[0];
 
         let luma_qtable = self.options.luma_qtable.as_ref();
@@ -126,25 +131,23 @@ impl EncoderTrait for MozJpegEncoder {
 
             comp.set_size(width, height);
 
-            // When using custom quantization tables with very high quality settings (>= 85),
-            // DCT coefficients can overflow. Instead of reducing quality, we apply smoothing
-            // to normalize the data and prevent coefficient overflow.
+            // Custom quantization tables scaled to high quality can produce
+            // quantization values approaching the JPEG minimum of 1, which
+            // allows DCT coefficient overflow. We apply proportional
+            // smoothing to dampen high frequencies before quantization.
             let has_custom_qtables = luma_qtable.is_some() || chroma_qtable.is_some();
-            let safe_smoothing = if has_custom_qtables && self.options.quality >= 85.0 {
-                // Apply moderate smoothing to prevent DCT coefficient overflow
-                // This helps normalize extreme pixel values without reducing quality
-                let applied_smoothing = if self.options.smoothing >= 10 {
-                    self.options.smoothing
-                } else {
-                    10 // Minimum smoothing required to prevent DCT overflow
-                };
-                log::warn!(
-                    "High quality ({}) with custom quantization tables detected. \
-                     Applying smoothing ({}) to prevent DCT coefficient overflow.",
-                    self.options.quality,
-                    applied_smoothing
-                );
-                applied_smoothing
+            let safe_smoothing = if has_custom_qtables && self.options.quality > 80.0 {
+                // q85 → ~4, q90 → ~6, q95 → ~8, q100 → ~10
+                let min_smoothing = ((self.options.quality - 75.0) * 0.4).round() as u8;
+                let applied = self.options.smoothing.max(min_smoothing);
+                if applied != self.options.smoothing {
+                    log::debug!(
+                        "Smoothing raised from {} to {applied} to prevent DCT overflow at quality {}",
+                        self.options.smoothing,
+                        self.options.quality,
+                    );
+                }
+                applied
             } else {
                 self.options.smoothing
             };
@@ -201,12 +204,6 @@ impl EncoderTrait for MozJpegEncoder {
 
             #[cfg(feature = "metadata")]
             {
-                // write exif data
-                if let Some(_metadata) = &image.metadata().exif() {
-                    log::warn!("Writing exif data is not supported");
-                }
-
-                // write icc data
                 if let Some(metadata) = &image.metadata().icc_chunk() {
                     comp.write_icc_profile(metadata);
                 }

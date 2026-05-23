@@ -10,7 +10,7 @@ pub fn mozjpeg() -> Command {
             arg!(-q --quality <NUM> "Quality, values 60-80 are recommended.")
                 .value_parser(value_parser!(u8).range(1..=100))
                 .default_value("75"),
-            arg!(--chroma_quality <NUM> "Separate chrome quality.")
+            arg!(--chroma_quality <NUM> "Separate chroma quality.")
                 .value_parser(value_parser!(u8).range(1..=100)),
             arg!(--baseline "Set to use baseline encoding (by default is progressive)."),
             arg!(--no_optimize_coding "Set to make files larger for no reason."),

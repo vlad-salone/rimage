@@ -1,13 +1,11 @@
 use std::path::{Path, PathBuf};
 
-use rayon::prelude::*;
-
 pub fn get_paths(
     files: Vec<PathBuf>,
     out_dir: Option<PathBuf>,
     suffix: Option<String>,
     recursive: bool,
-) -> impl ParallelIterator<Item = (PathBuf, PathBuf)> {
+) -> impl Iterator<Item = (PathBuf, PathBuf)> {
     let common_path = if recursive {
         get_common_path(&files)
     } else {
@@ -15,7 +13,7 @@ pub fn get_paths(
     };
 
     files
-        .into_par_iter()
+        .into_iter()
         .filter_map(move |path| -> Option<(PathBuf, PathBuf)> {
             if !path.is_file() {
                 log::warn!("{path:?} is not a file");

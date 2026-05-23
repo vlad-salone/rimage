@@ -60,7 +60,7 @@ impl Preprocessors for Command {
                 arg!(--upscale "Upscale the image(s) when resizing.")
                     .long_help(indoc! {r#"Upscale the image(s) when resizing.
 
-                    This is useful when you want to reduce the size of the image when it is larger than the specified size.
+                    This is useful when you want to increase the size of the image when it is smaller than the specified size.
                     It is recommended to use this option with --resize"#})
                     .default_value("true")
                     .action(ArgAction::SetTrue)
@@ -70,7 +70,7 @@ impl Preprocessors for Command {
                 arg!(--"no-upscale" "Disable upscaling when resizing.")
                     .long_help(indoc! {r#"Disable upscaling when resizing.
 
-                    This is useful when you don't want to reduce the size of the image when it is larger than the specified size.
+                    This is useful when you don't want to increase the size of the image when it is smaller than the specified size.
                     It is recommended to use this option with --resize"#})
                     .action(ArgAction::SetTrue)
                     .requires("resize"),
@@ -82,17 +82,29 @@ impl Preprocessors for Command {
                     .requires("resize"),
 
                 #[cfg(feature = "quantization")]
-                arg!(--quantization [QUALITY] "Enables quantization with optional quality.")
-                    .long_help(indoc! {r#"Enables quantization with optional quality in percentage.
+                arg!(--quantization [QUALITY] "Reduces the color palette to the given quality percentage.")
+                    .long_help(indoc! {r#"Reduces the color palette to the given quality percentage.
 
-                    If quality is not provided, default 75 is used"#})
+                    This is a preprocessing step that limits how many distinct
+                    colors the image can use, not a replacement for -q/--quality
+                    (which controls encoder compression).
+
+                    Lower values produce fewer colors, which can introduce
+                    banding artifacts. For best file-size reduction, combine
+                    with a lower -q value, e.g. -q 50 --quantization 80.
+
+                    If quality is not provided, default 75 is used."#})
                     .value_parser(value_parser!(u8).range(1..=100))
                     .action(ArgAction::Append)
                     .default_missing_value("75"),
 
                 #[cfg(feature = "quantization")]
-                arg!(--dithering [QUALITY] "Enables dithering with optional quality.")
-                    .long_help(indoc! {r#"Enables dithering with optional quality in percentage.
+                arg!(--dithering [QUALITY] "Smooths banding artifacts introduced by quantization.")
+                    .long_help(indoc! {r#"Smooths banding artifacts introduced by quantization.
+
+                    Higher values spread quantization error more evenly,
+                    reducing visible banding at the cost of slightly
+                    larger file sizes.
 
                     Used with --quantization flag.
                     If quality is not provided, default 75 is used."#})

@@ -72,6 +72,11 @@ impl EncoderTrait for AvifEncoder {
         sink: T,
     ) -> Result<usize, ImageErrors> {
         let (width, height) = image.dimensions();
+        if image.is_animated() {
+            log::warn!(
+                "AVIF encoder does not support animated images, only the first frame will be encoded"
+            );
+        }
         let data = &image.flatten_to_u8()[0];
 
         let mut writer = ZWriter::new(sink);

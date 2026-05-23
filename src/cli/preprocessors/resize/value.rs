@@ -1,5 +1,10 @@
+use std::sync::LazyLock;
+
 use anyhow::anyhow;
 use regex::Regex;
+
+static WIDTH_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?P<width>\d+)").unwrap());
+static HEIGHT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?P<height>\d+)").unwrap());
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ResizeValue {
@@ -67,16 +72,14 @@ impl std::str::FromStr for ResizeValue {
             s if s.ends_with('%') => Ok(Self::Percentage(s[..s.len() - 1].parse()?)),
             s if s.contains('w') && s.contains('h') => Err(anyhow!("Invalid resize value")),
             s if s.contains('w') => {
-                let re = Regex::new(r"(?P<width>\d+)").unwrap();
-                let Some(cap) = re.captures(&s) else {
+                let Some(cap) = WIDTH_RE.captures(&s) else {
                     return Err(anyhow!("Invalid resize value"));
                 };
 
                 Ok(Self::Dimensions(Some(cap["width"].parse()?), None))
             }
             s if s.contains('h') => {
-                let re = Regex::new(r"(?P<height>\d+)").unwrap();
-                let Some(cap) = re.captures(&s) else {
+                let Some(cap) = HEIGHT_RE.captures(&s) else {
                     return Err(anyhow!("Invalid resize value"));
                 };
 

@@ -33,12 +33,13 @@ impl CommonArgs for Command {
                 If no suffix is provided, the default updated suffix '@updated' will be added to the resulting files."#})
                 .default_missing_value("updated"),
             arg!(-b --backup "Adds the '@backup' to the names of input file(s)."),
-            arg!(-t --threads <NUM> "The number of threads for concurrent processing.")
-                .long_help(indoc! {r#"The number of threads for concurrent processing.
+            arg!(-t --threads <NUM> "The maximum number of images to process concurrently.")
+                .long_help(indoc! {r#"The maximum number of images to process concurrently.
 
-                Usage of multiple threads can speed up the execution of tasks, especially on multi-core processors.
-                By default, the number of available threads is utilized."#})
-                .value_parser(value_parser!(u8).range(1..=threads::num_threads() as i64)),
+                Limits how many images are decoded and held in memory at once.
+                Higher values increase speed but use more RAM, which may cause out-of-memory errors with large images.
+                By default, processes one image at a time (--threads 1)."#})
+                .value_parser(value_parser!(u8).range(1i64..=threads::num_threads() as i64)),
             arg!(-x --strip "Strip metadata when encoding images (where supported)")
                 .action(ArgAction::SetTrue),
             arg!(--"no-progress" "Disables progress bar.")

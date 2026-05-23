@@ -13,3 +13,7 @@ lcov.info
 *.log
 *.diff
 *.bat
+
+# Claude Code Settings
+CLAUDE.md
+.claude/

@@ -32,7 +32,7 @@ impl OperationsTrait for Quantize {
 
     fn execute_impl(&self, image: &mut zune_image::image::Image) -> Result<(), ImageErrors> {
         let (src_width, src_height) = image.dimensions();
-        let channel_len = src_width * src_height * image.depth().size_of();
+        let channel_len = src_width * src_height;
 
         let mut liq = imagequant::new();
 
@@ -76,19 +76,24 @@ impl OperationsTrait for Quantize {
 
                 let channels = pixels
                     .iter()
-                    .map(|px| {
-                        let px = palette[*px as usize];
-                        (px.r, px.g, px.b, px.a)
-                    })
                     .enumerate()
+                    .map(|(idx, raw_px)| {
+                        let px = palette[*raw_px as usize];
+                        (idx, px.r, px.g, px.b, px.a)
+                    })
                     .fold(
                         vec![Channel::new_with_bit_type(channel_len, BitType::U8); 4],
-                        |mut acc, (idx, px)| {
+                        |mut acc, (idx, r, g, b, a)| {
+                            // SAFETY: idx is bounded by pixels.len() which equals
+                            // src_width * src_height, and channels are pre-allocated
+                            // with channel_len (= src_width * src_height) bytes of U8.
+                            // Each alias_mut slice therefore has at least idx+1 elements.
                             unsafe {
-                                acc[0].alias_mut()[idx] = px.0;
-                                acc[1].alias_mut()[idx] = px.1;
-                                acc[2].alias_mut()[idx] = px.2;
-                                acc[3].alias_mut()[idx] = px.3;
+                                debug_assert!(idx < channel_len);
+                                acc[0].alias_mut()[idx] = r;
+                                acc[1].alias_mut()[idx] = g;
+                                acc[2].alias_mut()[idx] = b;
+                                acc[3].alias_mut()[idx] = a;
                             }
 
                             acc

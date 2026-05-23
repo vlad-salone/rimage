@@ -45,9 +45,11 @@ pub(crate) fn create_test_image_animated(
     let mut frames = vec![];
 
     let channel_length = width * height;
+    let num_components = colorspace.num_components();
 
     (0..=5).for_each(|_| {
-        let channels = vec![Channel::new_with_bit_type(channel_length, BitType::U8); 3];
+        let channels =
+            vec![Channel::new_with_bit_type(channel_length, BitType::U8); num_components];
         frames.push(Frame::new(channels))
     });
 

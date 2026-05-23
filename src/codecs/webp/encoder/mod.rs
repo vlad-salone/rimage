@@ -58,17 +58,15 @@ impl EncoderTrait for WebPEncoder {
             let mut encoder = webp::AnimEncoder::new(width as u32, height as u32, &self.options);
 
             encoder.set_bgcolor([0, 0, 0, 0]);
-            encoder.set_loop_count(frames.len() as i32);
+            encoder.set_loop_count(0); // 0 = loop forever (infinite)
 
             frames.iter().try_for_each(|frame| {
-                // TODO: add frame timestamp
-
                 let frame = match image.colorspace() {
                     ColorSpace::RGB => {
-                        webp::AnimFrame::from_rgb(frame, width as u32, height as u32, 500)
+                        webp::AnimFrame::from_rgb(frame, width as u32, height as u32, 100)
                     }
                     ColorSpace::RGBA => {
-                        webp::AnimFrame::from_rgba(frame, width as u32, height as u32, 500)
+                        webp::AnimFrame::from_rgba(frame, width as u32, height as u32, 100)
                     }
                     cs => {
                         return Err(ImageErrors::EncodeErrors(

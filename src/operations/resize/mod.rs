@@ -59,6 +59,11 @@ impl OperationsTrait for Resize {
 
                     let mut new_channel = Channel::new_with_bit_type(new_length, depth);
 
+                    // SAFETY: old_channel.alias_mut() provides a mutable byte slice
+                    // view of the channel data. from_slice_u8 reads this data for the
+                    // resize operation. The alias is only used within this scope;
+                    // old_channel is replaced atomically at the end. Each channel is
+                    // processed in its own thread so there is no aliasing across threads.
                     let src_image = fr::images::Image::from_slice_u8(
                         src_width as u32,
                         src_height as u32,
@@ -94,6 +99,9 @@ impl OperationsTrait for Resize {
                         )
                         .map_err(|e| ImageOperationsErrors::GenericString(e.to_string()))?;
 
+                    // SAFETY: new_channel is pre-allocated with new_length bytes.
+                    // dst_image.buffer() contains exactly the resized output with
+                    // the same byte length as new_channel (dst_width * dst_height * pixel_size).
                     unsafe {
                         new_channel.alias_mut().copy_from_slice(dst_image.buffer());
                     }
@@ -114,6 +122,10 @@ impl OperationsTrait for Resize {
         for old_channel in image.channels_mut(false) {
             let mut new_channel = Channel::new_with_bit_type(new_length, depth);
 
+            // SAFETY: old_channel.alias_mut() provides a mutable byte slice view
+            // that is consumed by from_slice_u8 for source data. The reference
+            // is used only within this iteration and old_channel is replaced
+            // before the next iteration.
             let src_image = fr::images::Image::from_slice_u8(
                 src_width as u32,
                 src_height as u32,
@@ -144,6 +156,8 @@ impl OperationsTrait for Resize {
                 )
                 .map_err(|e| ImageOperationsErrors::GenericString(e.to_string()))?;
 
+            // SAFETY: new_channel was allocated with new_length bytes.
+            // dst_image.buffer() has exactly the same length.
             unsafe {
                 new_channel.alias_mut().copy_from_slice(dst_image.buffer());
             }
