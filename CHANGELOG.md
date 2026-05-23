@@ -2,6 +2,42 @@
 
 All notable changes to the Rimage library will be documented in this file.
 
+# [0.12.4](https://github.com/SalOne22/rimage/compare/v0.12.3...v0.12.4) (2026-05-23)
+
+### Features
+
+- robust path normalization and bounded concurrency to prevent OOM on large images ([4b030da](https://github.com/SalOne22/rimage/commit/4b030dafc5fbd7ab3af126ba454121e81567d79f))
+- add `FinishGuard` to manage progress bar updates on drop ([c5a3bf0](https://github.com/SalOne22/rimage/commit/c5a3bf0e72eb181ba93a1988e8ad56848750e9d6))
+
+### Bug Fixes
+
+- critical bug fixes across codecs and operations: replace `unreachable!()` with proper errors, fix crashes on non-existent paths and missing file stems, fix animated image channel count, fix webp loop_count, fix UNC path corruption on Windows, fix race condition in little_exif error suppression ([fccd4e2](https://github.com/SalOne22/rimage/commit/fccd4e296d6a5e188ec2443033af0ca14c511399))
+- prevent DCT overflow with proportional smoothing for high-quality custom quantization tables ([e653b40](https://github.com/SalOne22/rimage/commit/e653b405c535e5f32066259431d4c9e680b76fc3))
+- correct channel length calculation in quantization process ([f6eb26d](https://github.com/SalOne22/rimage/commit/f6eb26dd5c257ec092741b6ab39fa76e252d552f))
+- retain permit in concurrent image processing for proper resource management ([fb76593](https://github.com/SalOne22/rimage/commit/fb7659305f82c9a70c52e2c3f98d6b8f5d47aa1e))
+
+### Improvements
+
+- use `log` module to submit log infos ([729c65d](https://github.com/SalOne22/rimage/commit/729c65d836fe1328b89f2fb4150d2d90cce3442d))
+- refactor path normalization tests for platform compatibility ([77b5698](https://github.com/SalOne22/rimage/commit/77b56985fd6ad44e85d19137d2eacf0eb2fbf748))
+
+### Dependencies
+
+- bump `zune-image` to stable ([b1666f9](https://github.com/SalOne22/rimage/commit/b1666f92dbcade59e938513c837da708473e6e36))
+- bump `rayon` to 1.12.0 ([085d0b7](https://github.com/SalOne22/rimage/commit/085d0b7f11c4322da0ae7a854992d5e5401c1fae))
+- bump `clap` to 4.6 ([3a2d73e](https://github.com/SalOne22/rimage/commit/3a2d73e3e34919f64e9cb59e1cd479d90e74c65e))
+- bump `tiff` to 0.11.3 ([4399224](https://github.com/SalOne22/rimage/commit/439922422d6dd28541f3e5859c10671f0fa2d544))
+- bump `little_exif` to 0.6.23 ([c935cbd](https://github.com/SalOne22/rimage/commit/c935cbd045bfd18eb7693b7628b22c7b3fcb2fb5))
+- bump `ravif` to 0.13.0 ([8b9c057](https://github.com/SalOne22/rimage/commit/8b9c0571ec489e23840a959bcbdd01a1452aabd3))
+- bump `oxipng` to 10.1.1 ([cc5112e](https://github.com/SalOne22/rimage/commit/cc5112ecd5f65f8a20e3707fe277d37201aba798))
+- bump `fast_image_resize` to 6.0 ([ddb0e9a](https://github.com/SalOne22/rimage/commit/ddb0e9ab07dc6872b1c2a3920cfb7736621b4f1b))
+
+### Build / CI
+
+- update GitHub Actions configs, bump dep versions, fix aarch pkg update config ([1685073](https://github.com/SalOne22/rimage/commit/1685073eaf42a4a8058100f80dd10f99945a14a4))
+- update workflow to suppress Node.js 20 deprecation warning and re-fix Mac build ([6fe07fa](https://github.com/SalOne22/rimage/commit/6fe07fae3927882c37206e072c7bd7c814289e43))
+- specify shell for Windows dependency installation ([facc4c0](https://github.com/SalOne22/rimage/commit/facc4c0db5f4033c77dda9c7b1b5ed55c1b6b591))
+
 # [0.12.3](https://github.com/SalOne22/rimage/compare/v0.12.2...v0.12.3) (2026-01-29)
 
 ### Bug Fixes
