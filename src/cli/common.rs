@@ -37,8 +37,7 @@ impl CommonArgs for Command {
                 .long_help(indoc! {r#"The maximum number of images to process concurrently.
 
                 Limits how many images are decoded and held in memory at once.
-                Higher values increase speed but use more RAM, which may cause
-                out-of-memory errors with large images.
+                Higher values increase speed but use more RAM, which may cause out-of-memory errors with large images.
                 By default, processes one image at a time (--threads 1)."#})
                 .value_parser(value_parser!(u8).range(1i64..=threads::num_threads() as i64)),
             arg!(-x --strip "Strip metadata when encoding images (where supported)")
