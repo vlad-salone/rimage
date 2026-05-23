@@ -165,6 +165,7 @@ jobs:
 
       - name: install dependencies (windows)
         if: startsWith(matrix.os, 'windows')
+        shell: pwsh
         run: |
           choco install -y ninja
           choco install -y meson
