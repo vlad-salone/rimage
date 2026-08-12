@@ -270,7 +270,7 @@ For library usage check [Docs.rs](https://docs.rs/rimage/latest/rimage/)
 | farbfeld     | zune-farbfeld | zune-farbfeld           |                                                      |
 | hdr          | zune-hdr      | zune-hdr                |                                                      |
 | jpeg         | zune-jpeg     | mozjpeg or jpeg-encoder | Multifunctional when use mozjpeg encoder             |
-| jpeg-xl      | jxl-oxide     | zune-jpegxl             | Lossless only                                        |
+| jpeg-xl      | jxl-oxide     | zune-jpegxl             | Lossless only, Static only                           |
 | png          | zune-png      | oxipng or zune-png      | Static only, Multifunctional when use oxipng encoder |
 | ppm          | zune-ppm      | zune-ppm                |                                                      |
 | psd          | zune-psd      | ❌                      | Input only                                           |
@@ -329,7 +329,7 @@ rimage png "D:\example.jpg" -s "suffix"  -d "D:\desktop\" # backslash at the end
 3. Install MSVC Build Tools (Windows):
    - Download and install from [Visual Studio 2026 Build Tools](https://visualstudio.microsoft.com/en-us/downloads/).
    - During installation, select "Desktop development with C++" workload.
-   - OR, just use `choco install visualstudio2022-workload-vctools` to install it.
+   - OR, just use `choco install visualstudio2026-workload-vctools` to install it.
 
 4. Install Perl:
    - Download and install from [Strawberry Perl](https://strawberryperl.com/).
@@ -340,21 +340,36 @@ rimage png "D:\example.jpg" -s "suffix"  -d "D:\desktop\" # backslash at the end
     - OR, just use `choco install cmake` to install it.
     - OR, you can use the bundled cmake in MSVC, but please note that only 4.2.3+ could be used.
 
-6. **RENAME** cmake from perl:
-    - Go to `C:\Strawberry\c\bin` (Your Perl installation directory) and rename `cmake.exe` to `cmake.exe.bak` to avoid conflicts with cmake installed in step 5 (The bundled cmake in perl is outdated and would distrube build scripts).
+6. Install nasm and yasm:
+   - Download and install from [nasm](https://www.nasm.us/) and [yasm](https://github.com/yasm/yasm/releases).
+   - OR, just use `choco install nasm` and `choco install yasm` to install them.
+   - **WARNING**: `libaom` requires older version of the nasm binary or yasm instead for a successful build, see [libavif-rs#122](https://github.com/njaard/libavif-rs/issues/122) for details.
 
-7. Make sure `$PATH`
+7. **WARNING** Avoid conflicts from perl:
+    - Remove `C:\Strawberry\c\bin` (Your Perl installation directory) from `$PATH$` to avoid conflicts with newer cmake version installed in step 5 (The bundled cmake in perl is outdated and would make build scripts get error).
+
+8. Make sure `$PATH`
     - Make sure the cmake installed in step 5 is in your system `$PATH` and can be called from command line. You can check this by running `cmake --version` in your terminal, it should show the version of cmake you installed in step 5.
     - Make sure Perl is in your system `$PATH` and can be called from command line. You can check this by running `perl --version` in your terminal, it should show the version of Perl you installed in step 4.
 
-8. Build / Test / Format the project:
+9. Build / Test / Format the project:
 
     ```pwsh
-    cargo build --release --all-features # BUILD
-    cargo run --features=build-binary ... # TEST with args
-    cargo clippy --all-features -- -D warnings # CHECK
-    cargo fmt --all -- --check # FORMAT
-    cargo test --workspace --all-features # TEST
+    # build the library and the CLI binary
+    cargo build --all-features
+
+    # run the binary during development
+    cargo run --all-features -- mozjpeg ./image.jpg
+
+    # unit and integration tests (install cargo-nextest first, original `cargo test` is also acceptable)
+    cargo nextest run --release --all-features
+
+    # doc tests; nextest does not run them
+    cargo test --doc --release --all-features
+
+    # format and check for formatting issues
+    cargo clippy --all-features -- -D warnings
+    cargo fmt --all -- --check
     ```
 
 ## Contributing

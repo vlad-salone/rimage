@@ -1,113 +1,110 @@
 # AGENTS.md
 
-## Project overview
+Guidance for coding agents working in this repository.
 
-Rimage is a Rust image optimization tool. It ships as both a library (`rimage`) and a CLI binary (`rimage`, feature-gated behind `build-binary`).
-The CLI exposes one subcommand per codec, a preprocessing pipeline (resize, quantization, alpha premultiply, ICC), bounded parallel processing, metadata handling, and atomic output publishing.
+## What this project is
 
-- Rust edition 2024, rustc 1.97.1+ (recommanded)
-- Licensed MIT OR Apache-2.0
+Rimage is a Rust image optimization crate with two deliverables:
+
+- a library that extends [`zune_image`](https://github.com/etemesi254/zune-image) with extra codecs (`avif`, `mozjpeg`, `oxipng`, `tiff`, `webp`) and operations (resize, quantization, ICC)
+- a CLI binary (`rimage`, built with `clap`) that drives the library
+
+The library lives in `src/lib.rs`, `src/codecs/` and `src/operations/`; the binary lives in `src/main.rs` and `src/cli/`. The binary only compiles with the `build-binary` feature, so every command that touches it needs `--all-features` or `--features build-binary`.
+
+The CLI exposes one subcommand per output codec: `avif`, `farbfeld`, `jpeg`, `jpeg_xl`, `mozjpeg`, `oxipng`, `png`, `ppm`, `qoi`, `webp`.
+`tiff` has no subcommand: it is decode-only and reached through the decoder fallback in `pipeline::decode` for `.tiff`/`.tif` inputs.
+`webp`, `avif`, and `jpeg_xl` are supported finitely, only static pictures are supported.
+`jpeg_xl` is lossless-only.
+
+Preprocessing covers `--resize` (with `--filter` and direction flags such as `--reduce-only`/`--enlarge-only`), `--quantization`/`--dithering`, and `--premultiply`.
+
+Rust edition is 2024; the crate is developed on stable 1.97 and does not pin an MSRV. `let ... && ...` and `if let ... && ...` chains are used in `src/main.rs` and `src/cli/utils/paths/`.
 
 ## Repository layout
 
-| Path                     | Responsibility                                                                                                                                            |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/lib.rs`             | Library entry point with `#![warn(missing_docs)]`; re-exports `operations` and `codecs`. `src/test_utils.rs` is compiled only under `cfg(test)`.          |
-| `src/main.rs`            | CLI binary entry point: input collection, concurrency, progress reporting, EXIF/ICC handling, atomic output publishing.                                   |
-| `src/cli/cli.rs`         | Builds the clap command tree: codec subcommands + common args + preprocessors.                                                                            |
-| `src/cli/common.rs`      | `CommonArgs` trait: input files, `-d/--directory`, `-r/--recursive`, `-s/--suffix`, `-b/--backup`, `-t/--threads`, `-x/--strip`, progress flags.          |
-| `src/cli/codecs/`        | One module per CLI codec subcommand; the `Codecs` trait wires them onto the clap `Command`.                                                               |
-| `src/cli/pipeline.rs`    | `decode`, `operations`, `encoder`, `AvailableEncoders`. Turns parsed arguments into an ordered operation queue; contains extensive inline pipeline tests. |
-| `src/cli/preprocessors/` | `--resize` value/filter parsing (`ResizeValue`, `ResizeFilter`) and preprocessing argument definitions.                                                   |
-| `src/cli/utils/`         | `paths` (input collection, normalization, collision detection) and `threads` (concurrency limiter).                                                       |
-| `src/operations/`        | Library-side image operations: `resize`, `quantize`, `icc`. Each module has a sibling `tests.rs`.                                                         |
-| `src/codecs/`            | Library-side codecs: `avif`, `mozjpeg`, `oxipng`, `tiff`, `webp`, each split into `encoder/` and/or `decoder/` with tests.                                |
-| `tests/deadlock.rs`      | End-to-end regression tests that run the built binary; only compiles with `build-binary`.                                                                 |
-| `tests/files/`           | Test fixture images.                                                                                                                                      |
-| `build.rs`               | Windows-only: embeds version resource info via `winresource`; no-op on other targets.                                                                     |
+| Path                     | Responsibility                                                                                                                                                                  |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib.rs`             | Library entry point with `#![warn(missing_docs)]`; re-exports `operations` and `codecs`.                                                                                        |
+| `src/main.rs`            | CLI entry point: path normalization, worker pool, EXIF/ICC handling, metadata output, atomic publishing.                                                                        |
+| `src/cli.rs`             | clap `Command` root; `after_help` contains the codec table.                                                                                                                     |
+| `src/cli/common.rs`      | `CommonArgs` trait: positional files, `-d/--directory`, `-r/--recursive`, `-s/--suffix`, `-b/--backup`, `-t/--threads`, `-x/--strip`, `--no-progress`, `--quiet`, `--metadata`. |
+| `src/cli/codecs/`        | One module per CLI codec subcommand, wired onto the clap `Command` by the `Codecs` trait.                                                                                       |
+| `src/cli/preprocessors/` | `Preprocessors` trait and `--resize` parsing (`ResizeValue`, `ResizeFilter`), quantization and premultiply flags.                                                               |
+| `src/cli/pipeline.rs`    | `decode`, `operations`, `encoder`, `AvailableEncoders`; glue between clap and the library, with inline pipeline tests.                                                          |
+| `src/cli/utils/`         | `paths` (glob and `file.list` expansion, output mapping, collision detection) and `threads` (concurrency limit).                                                                |
+| `src/codecs/`            | Library codecs (`avif`, `mozjpeg`, `oxipng`, `tiff`, `webp`), each gated behind a feature.                                                                                      |
+| `src/operations/`        | Library operations (`resize`, `quantize`, `icc`), each gated behind a feature with a sibling `tests.rs`.                                                                        |
+| `src/test_utils.rs`      | `create_test_image_u8/u16/f32/animated` helpers, `#[cfg(test)]` only.                                                                                                           |
+| `tests/deadlock.rs`      | End-to-end binary tests; only compiles with `build-binary`.                                                                                                                     |
+| `tests/files/`           | Real encoded fixtures per format.                                                                                                                                               |
+| `build.rs`               | Windows-only: embeds version resources via `winresource`; no-op elsewhere.                                                                                                      |
 
-## Build, test, and lint commands
+## Build, test, and lint
 
-The commands below mirror `.github/workflows/rimage.yml`, which is the source of truth for CI.
+Native dependencies for the C codecs: `cmake`, `ninja`, `meson`, `nasm` , `yasm` (recommended, must on macOS). On Windows use the MSVC toolchain (Visual Studio Build Tools / Developer PowerShell); MozJpeg's SIMD code is incompatible with MinGW/GCC in release mode, so MSVC is required. If Strawberry Perl is installed, make sure its bundled `cmake` does not shadow the real one (see README).
 
 ```sh
-# Build (all features)
-cargo build --release --all-features
+# build the library and the CLI binary
+cargo build --all-features
 
-# Tests on native targets
-# Requires `cargo-nextest` first, install with `cargo install cargo-nextest --locked`
+# run the binary during development
+cargo run --features build-binary -- mozjpeg ./image.jpg
+
+# unit and integration tests (install cargo-nextest first)
 cargo nextest run --release --all-features
+
+# doc tests; nextest does not run them
 cargo test --doc --release --all-features
 
-# Tests on cross targets (aarch64-unknown-linux-musl in CI)
-cross test --release --all-features --target <triple> -- --test-threads=1
-cross test --release --all-features --target <triple> --doc
+# plain cargo test also works if nextest is not installed
+cargo test --all-features
+```
 
-# Lint (CI runs with -D warnings)
+Lint gates, both enforced in CI and both must be clean:
+
+```sh
 cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
-CI runs the test matrix on Linux gnu/musl (x86_64, aarch64), Windows MSVC
-(x86_64, i686) and macOS (x86_64, aarch64). `Cross.toml` pins the cross image for `aarch64-unknown-linux-musl`; `.cargo/config.toml` provides the QEMU runner and linkers for aarch64 Linux targets. The WASM job in the workflow is disabled on purpose (`if: false`, see: <https://github.com/vlad-salone/rimage/issues/144>) and is kept as a reference.
+Builds are slow because the C codecs compile from source: prefer `cargo check --all-features` while iterating and scope test runs with a filter (e.g. `cargo nextest run --all-features -E 'test(resize)'`).
 
-### Native toolchain requirements
-
-- Rust stable toolchain with `rustfmt` and `clippy` components.
-- C/C++ compiler: MSVC Build Tools on Windows, clang/gcc on Linux and macOS.
-  - Note: Not support GNU on Windows.
-- `cmake`, `ninja`, `meson`, `nasm`, `yasm` (recommanded, must on MacOS) for the C dependencies (`libaom`, `libavif`, `libwebp`, `mozjpeg`, `lcms2`, `libdeflate`).
-  - Note: If strawberry-perl is installed on Windows, please check `cmake.exe` and `make.exe` is not use version provided by strawberry-perl, otherwise it will cause build failure.
-  - Note: `libaom` requires older version of the `nasm` binary or `yasm` instead for a successful build.
+CI (`.github/workflows/rimage.yml`) runs on eight targets: Linux gnu and musl (x86_64, aarch64), Windows MSVC (x86_64, i686) and macOS (x86_64, aarch64). `aarch64-unknown-linux-musl` runs under `cross` with QEMU and `--test-threads=1`; `Cross.toml` pins the cross image by digest and `.cargo/config.toml` provides the aarch64 runners/linkers. The `wasm32-unknown-emscripten` job is intentionally disabled (`if: false`) and kept as a reference. Markdown-only changes are skipped by the `paths-ignore` filter.
 
 ## Cargo features
 
-`Cargo.toml` gates codecs and operations with optional dependencies:
+- Operations: `resize` (`fast_image_resize`), `quantization` (`imagequant`), `icc` (`lcms2`); `metadata` enables `--metadata` via `serde`/`serde_json`.
+- Codecs: `mozjpeg`, `oxipng`, `avif` (`ravif`/`libavif`), `webp`, `tiff`; `threads` enables parallel encoding paths.
+- `build-binary` pulls in the CLI-only dependencies (`clap`, `anyhow`, `rayon`, `indicatif`, ...) and is required by the `[[bin]]` target.
 
-- `resize` -> `fast_image_resize`; `quantization` -> `imagequant`;
-  `icc` -> `lcms2`; `metadata` -> `serde`/`serde_json`.
-- `mozjpeg`, `oxipng`, `avif` (ravif/libavif), `webp`, `tiff` -> codec crates.
-- `threads` enables parallel encoding paths.
-- `build-binary` pulls in the CLI-only dependencies (`clap`, `anyhow`, `rayon`, `indicatif`, `regex`, ...) and is required by the `[[bin]]` target.
-
-`AvailableEncoders::encode` in `src/cli/pipeline.rs` matches every codec variant unconditionally, so the binary only compiles when the codec features are enabled (the default feature set or `--all-features`). The library compiles without them.
+Every codec and operation module is `#[cfg(feature = "...")]`-gated. `AvailableEncoders::encode` matches every codec variant unconditionally, so the binary only compiles with the codec features enabled (the default feature set or `--all-features`); the library compiles without them.
 
 ## Architecture and data flow
 
-1. `main.rs` collects inputs through `cli::utils::paths` (globs, `file.list`, recursive expansion), deduplicates them, and rejects collisions up front.
-2. A bounded thread pool (`ConcurrencyLimiter`, `-t/--threads`) processes files.
-   The permit is acquired inside the worker closure, which is what avoids the single-threaded deadlock (`tests/deadlock.rs` pins this).
-3. For each image, `pipeline::decode` opens it, `pipeline::operations` builds the operation queue from CLI arguments, and the queue runs in argument order.
-4. `pipeline::operations` returns a `BTreeMap<usize, Box<dyn OperationsTrait>>` keyed by argument index, so operations execute in the order they were passed. Multiple `--resize` values chain: each value maps from the size the previous resize produced, and a skipped step leaves the current size unchanged.
-5. Encoded output is written to a unique temporary file and published by rename. `--backup` uses hard links with a no-clobber fallback, and the input is removed only after a successful publish.
+1. `main.rs` collects inputs through `cli::utils::paths` (globs, `file.list`, recursive expansion), deduplicates them, and rejects output collisions up front.
+2. A bounded thread pool (`ConcurrencyLimiter`, `-t/--threads`) processes files. The permit is acquired inside the worker closure, which is what avoids the `-t 1` deadlock pinned by `tests/deadlock.rs`.
+3. Each image is decoded (`pipeline::decode`, with a custom decoder fallback for avif/webp/tiff), then `pipeline::operations` builds the operation queue from CLI arguments and it runs in argument order.
+4. `operations()` returns a `BTreeMap<usize, Box<dyn OperationsTrait>>` keyed by argument index. Chained `--resize` values compose: each maps the size the previous resize produced, and a skipped step leaves the current size unchanged.
+5. Output is written to a unique temporary file and published by rename. `--backup` hard-links the input (copy fallback), never overwrites an existing destination, and the input is removed only after a successful publish.
 
 ## Concurrency and lifecycle constraints
 
-- Never change the `BTreeMap<usize, ...>` keys in `operations()` — they encode CLI argument order.
+- Do not change the `BTreeMap<usize, ...>` keys in `operations()`; they encode CLI argument order.
 - Keep `ConcurrencyLimiter` permit acquisition inside the worker closure; acquiring it on the main thread deadlocks with `-t 1`.
-- Output must be published atomically (temp file + rename); do not write directly to the final output path.
-- Keep `tests/deadlock.rs` compatible with `--test-threads=1`, since CI runs it that way on cross/QEMU targets.
+- Output must be published atomically (temp file + rename); never write directly to the final output path.
+- Keep `tests/deadlock.rs` compatible with `--test-threads=1`; CI runs it that way on the cross/QEMU target.
+- Path handling in `src/main.rs` and `src/cli/utils/paths/` is deliberate and load bearing: output paths are compared case-insensitively on every platform and `--backup` destinations are never overwritten. Read the comments there before changing any of it.
 
-## Code style
+## Code conventions
 
-- Comments and doc comments in English; public library items need `///` docs (`#![warn(missing_docs)]`).
-- Logging via the `log` crate (`trace`/`debug` for pipeline setup, `error` for failures); CLI progress via `indicatif` and `indicatif-log-bridge`.
-- Library code uses actual error structures for robustness. Binary code uses anyhow for simplicity.
-- Clap arguments use the `arg!` macro with `indoc!` `long_help`; use `visible_alias` when offering alternative names (e.g. `--reduce-only`).
-- Feature-gate codec and operation imports with `#[cfg(feature = "...")]`.
-- Keep `CHANGELOG.md` updated for user-visible changes, grouped under `Breaking Changes` / `Features` / `Bug Fixes` / `Improvements` / `Dependencies` without emoji.
-- Commits follow Conventional Commits (see `CONTRIBUTING.md`).
+- The lint gates above are the only style rules; rustfmt and clippy handle the rest (`#![warn(missing_docs)]` warnings become errors under `-D warnings`).
+- Keep codec and operation modules feature-gated with `#[cfg(feature = "...")]`.
+- To add a codec: gate the module in `src/codecs/mod.rs`, add the feature to `Cargo.toml`, and add the matching subcommand in `src/cli/codecs/` wired into the `Codecs` trait.
+- Library code uses actual error structures for robustness. Binary code uses `anyhow` for simplicity.
 
 ## Testing conventions
 
-- Unit tests live in `#[cfg(test)] mod tests` inside the module (e.g. `value.rs`) or in a sibling `tests.rs` (`src/operations/*`, `src/codecs/*`).
-  - Note: For large test suits, it is recommended to move them to a separate file (`/tests/deadlock.rs`).
-- Pipeline tests live in `src/cli/pipeline.rs` and drive real CLI arguments through `operations()`, asserting both queued operations and final dimensions.
+- Unit tests live in an inline `#[cfg(test)] mod tests` (e.g. `src/main.rs`, `src/cli.rs`) or in a sibling `tests.rs` (`src/operations/*`, `src/codecs/*`, `src/cli/utils/paths/`). For large test suits, it's recommended to move them to a separate file.
 - `tests/deadlock.rs` covers end-to-end binary behavior and only compiles with `build-binary`.
-- Test images are fixtures under `tests/files/`; `src/test_utils.rs` provides image builders for library tests.
-
-## Generated files and files that must not be edited manually
-
-- `Cargo.lock` is committed (binary crate); update it through `cargo` commands only.
-- `target/` and `build.rs` outputs are build artifacts.
-- `tests/files/` fixtures are regenerated through project tooling (see the CHANGELOG note about regenerating the AVIF fixture), not hand-edited.
+- Pipeline tests live in `src/cli/pipeline.rs` and drive real CLI arguments through `operations()`, asserting both queued operations and final dimensions.
+- Build fixture images with the helpers in `src/test_utils.rs` rather than reading files from disk; reserve `tests/files/` for cases that need a real encoded file.
