@@ -56,8 +56,9 @@ CI runs the test matrix on Linux gnu/musl (x86_64, aarch64), Windows MSVC
 - Rust stable toolchain with `rustfmt` and `clippy` components.
 - C/C++ compiler: MSVC Build Tools on Windows, clang/gcc on Linux and macOS.
   - Note: Not support GNU on Windows.
-- `cmake`, `ninja`, `meson`, `nasm` (plus `yasm` on macOS) for the C dependencies (libaom, libavif, libwebp, mozjpeg, lcms2, libdeflate).
+- `cmake`, `ninja`, `meson`, `nasm`, `yasm` (recommanded, must on MacOS) for the C dependencies (`libaom`, `libavif`, `libwebp`, `mozjpeg`, `lcms2`, `libdeflate`).
   - Note: If strawberry-perl is installed on Windows, please check `cmake.exe` and `make.exe` is not use version provided by strawberry-perl, otherwise it will cause build failure.
+  - Note: `libaom` requires older version of the `nasm` binary or `yasm` instead for a successful build.
 
 ## Cargo features
 
@@ -91,7 +92,7 @@ CI runs the test matrix on Linux gnu/musl (x86_64, aarch64), Windows MSVC
 
 - Comments and doc comments in English; public library items need `///` docs (`#![warn(missing_docs)]`).
 - Logging via the `log` crate (`trace`/`debug` for pipeline setup, `error` for failures); CLI progress via `indicatif` and `indicatif-log-bridge`.
-- CLI parsing errors use `anyhow`; decode errors surface as `zune_image::errors::ImageErrors`.
+- Library code uses actual error structures for robustness. Binary code uses anyhow for simplicity.
 - Clap arguments use the `arg!` macro with `indoc!` `long_help`; use `visible_alias` when offering alternative names (e.g. `--reduce-only`).
 - Feature-gate codec and operation imports with `#[cfg(feature = "...")]`.
 - Keep `CHANGELOG.md` updated for user-visible changes, grouped under `Breaking Changes` / `Features` / `Bug Fixes` / `Improvements` / `Dependencies` without emoji.
@@ -100,6 +101,7 @@ CI runs the test matrix on Linux gnu/musl (x86_64, aarch64), Windows MSVC
 ## Testing conventions
 
 - Unit tests live in `#[cfg(test)] mod tests` inside the module (e.g. `value.rs`) or in a sibling `tests.rs` (`src/operations/*`, `src/codecs/*`).
+  - Note: For large test suits, it is recommended to move them to a separate file (`/tests/deadlock.rs`).
 - Pipeline tests live in `src/cli/pipeline.rs` and drive real CLI arguments through `operations()`, asserting both queued operations and final dimensions.
 - `tests/deadlock.rs` covers end-to-end binary behavior and only compiles with `build-binary`.
 - Test images are fixtures under `tests/files/`; `src/test_utils.rs` provides image builders for library tests.
