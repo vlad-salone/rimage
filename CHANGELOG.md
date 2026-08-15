@@ -2,7 +2,7 @@
 
 All notable changes to the Rimage library will be documented in this file.
 
-# 0.13.0
+# [0.13.0](https://github.com/SalOne22/rimage/compare/v0.12.4...v0.13.0) (2026-08-14)
 
 ### Breaking Changes
 
@@ -37,6 +37,7 @@ All notable changes to the Rimage library will be documented in this file.
 - write JSON metadata atomically and use saturating arithmetic for size and space-saved statistics
 - add end-to-end regression tests covering single-thread processing, recursive output layouts, backup collisions, existing-backup protection and non-zero exit codes
 - regenerate the AVIF test fixture
+- update install steps of dependencies for building on Windows
 
 ### Dependencies
 

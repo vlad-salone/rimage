@@ -338,7 +338,7 @@ rimage png "D:\example.jpg" -s "suffix"  -d "D:\desktop\" # backslash at the end
 5. Install cmake (OPTIONAL if you use the MSVC bundled version):
     - Download and install from [CMake](https://cmake.org/download/).
     - OR, just use `choco install cmake` to install it.
-    - OR, you can use the bundled cmake in MSVC, but please note that only 4.2.3+ could be used.
+    - OR, you can use the bundled cmake in MSVC, but please note that only **4.2.3** + could be used.
 
 6. Install nasm and yasm:
    - Download and install from [nasm](https://www.nasm.us/) and [yasm](https://github.com/yasm/yasm/releases).
@@ -346,7 +346,7 @@ rimage png "D:\example.jpg" -s "suffix"  -d "D:\desktop\" # backslash at the end
    - **WARNING**: `libaom` requires older version of the nasm binary or yasm instead for a successful build, see [libavif-rs#122](https://github.com/njaard/libavif-rs/issues/122) for details.
 
 7. **WARNING** Avoid conflicts from perl:
-    - Remove `C:\Strawberry\c\bin` (Your Perl installation directory) from `$PATH$` to avoid conflicts with newer cmake version installed in step 5 (The bundled cmake in perl is outdated and would make build scripts get error).
+    - Remove `C:\Strawberry\c\bin` (Your Perl installation directory) from `$PATH$` to avoid conflicts with newer `cmake` installed in step 5 (The bundled `cmake.exe` in perl is OUTDATED and would make build scripts get error).
 
 8. Make sure `$PATH`
     - Make sure the cmake installed in step 5 is in your system `$PATH` and can be called from command line. You can check this by running `cmake --version` in your terminal, it should show the version of cmake you installed in step 5.

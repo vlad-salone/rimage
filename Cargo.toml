@@ -1,6 +1,6 @@
 [package]
 name          = "rimage"
-version       = "0.12.4"
+version       = "0.13.0"
 edition       = "2024"
 description   = "Optimize images natively with best-in-class codecs"
 license       = "MIT OR Apache-2.0"
