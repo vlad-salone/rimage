@@ -21,6 +21,7 @@ use cli::{
     },
 };
 use console::{Term, style};
+use filetime::FileTime;
 use indicatif::{DecimalBytes, MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use indicatif_log_bridge::LogWrapper;
 use little_exif::metadata::Metadata as ExifMetadata;
@@ -967,6 +968,7 @@ fn main() -> std::process::ExitCode {
             let recursive = matches.get_flag("recursive");
             let backup = matches.get_flag("backup");
             let strip_metadata = matches.get_flag("strip");
+            let preserve_timestamps = matches.get_flag("preserve-timestamps");
             let quiet = matches.get_flag("quiet");
             let no_progress = matches.get_flag("no-progress");
             let output_metadata = matches.contains_id("metadata");
@@ -1135,11 +1137,17 @@ fn main() -> std::process::ExitCode {
 
                         let mut ops: Vec<Box<dyn OperationsTrait>> = Vec::new();
 
-                        let input_size = fail_pipeline!(state, input
+                        let input_metadata = fail_pipeline!(state, input
                             .metadata()
-                            .map_err(|e| rimage::error::input_open_error(&input, &e))).len();
+                            .map_err(|e| rimage::error::input_open_error(&input, &e)));
+                        let input_size = input_metadata.len();
                         let input_format = get_file_extension(&input);
                         let input_modified = get_file_modified_time(&input);
+                        // Read from the stat above rather than from `input_modified`,
+                        // which is truncated to whole seconds for the JSON report and
+                        // would stamp the output a fraction of a second early.
+                        let preserved_mtime = preserve_timestamps
+                            .then(|| FileTime::from_last_modification_time(&input_metadata));
 
                         let input_is_svg = input
                             .extension()
@@ -1285,6 +1293,21 @@ fn main() -> std::process::ExitCode {
                             fail_pipeline!(state, actual_metadata
                                 .write_to_file(&temporary.path)
                                 .map_err(|e| rimage::error::output_io_error(&temporary.path, &e)));
+                        }
+
+                        // Stamp the temporary file rather than the published one: the
+                        // rename that publishes it carries the timestamps along, so the
+                        // output is never observable with the wrong time on it. This
+                        // has to happen after the EXIF and APP1 rewrites above, which
+                        // each touch the file and would push the time back to now.
+                        //
+                        // A volume that refuses the timestamp abandons the file, the
+                        // same way a failed EXIF write does: publishing anyway would
+                        // hand back an output the user did not ask for and report it as
+                        // a success, while abandoning it leaves their original untouched.
+                        if let Some(mtime) = preserved_mtime {
+                            fail_pipeline!(state, filetime::set_file_mtime(&temporary.path, mtime)
+                                .map_err(|e| rimage::error::output_io_error(&output, &e)));
                         }
 
                         if let Some(backup_path) = backup_path.as_deref() {

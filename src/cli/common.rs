@@ -56,6 +56,15 @@ impl CommonArgs for Command {
                 .value_parser(value_parser!(u16).range(1i64..=u16::MAX as i64)),
             arg!(-x --strip "Strip metadata when encoding images (where supported)")
                 .action(ArgAction::SetTrue),
+            arg!(-p --"preserve-timestamps" "Preserve the modification time of the input file(s) on the output.")
+                .long_help(indoc! {r#"Preserve the modification time of the input file(s) on the output.
+
+                By default, an output file carries the time it was written.
+
+                Only the last modification time is copied. Access times are left to the system, and creation
+                times are never touched: setting a file's birth time is impossible on Linux, which has no
+                system call for it, so no cross-platform guarantee can be made."#})
+                .action(ArgAction::SetTrue),
             arg!(--"no-progress" "Disables progress bar.")
                 .long_help(indoc! {r#"Disables progress bar.
 

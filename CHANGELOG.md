@@ -13,6 +13,7 @@ All notable changes to the Rimage library will be documented in this file.
 
 ### Features
 
+- add `-p/--preserve-timestamps` to stamp an output with its input's last modification time instead of the time it was written; the temporary file is stamped before the publishing rename, so the output is never observable with the wrong time, and access times and creation times are left alone because birth time cannot be set at all on Linux
 - resize SVG inputs through the existing `--resize` option by rendering the SVG vectorly with `resvg` directly at the final target size, so upscaling keeps the vector quality of the source
 - load system fonts for SVG text and substitute missing fonts with a warning: the serif default and the CJK fallback are resolved once at load time from platform-appropriate seeds (Times New Roman/Liberation Serif/DejaVu Serif, etc., YaHei/PingFang/Noto CJK, etc.), the `serif` generic alias is pointed at a family that actually exists, and a text span is never dropped for the lack of a font — as a last resort it renders with whatever face the system has
 - derive the image size ceiling at runtime behind a new `limits` feature instead of hard-coding it: the ceiling is the intersection of the dimensions a format itself declares as a hard limit (WebP's 16383, AVIF's 65536, and for JPEG and PNG the limit their decoder actually enforces), the memory available to the process divided by `--threads` and the peak number of live pixel buffers, and the free space on the destination volume, and it now bounds every decode and encode path
