@@ -3,6 +3,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(windows)]
+use std::ffi::OsStr;
+
 use super::*;
 
 fn unique_test_dir(name: &str) -> PathBuf {
@@ -239,6 +242,51 @@ fn file_list_must_be_readable_utf8() {
 }
 
 #[test]
+fn file_list_strips_only_matched_quote_pairs() {
+    let root = unique_test_dir("file-list-quotes");
+    fs::create_dir_all(&root).unwrap();
+    let list = root.join("file.list");
+    // A quoted path loses the pair; a name with a lone quote keeps it.
+    fs::write(&list, "\"photos/a.jpg\"\n'photos/b.jpg'\n\"odd.jpg\n").unwrap();
+
+    let entries = read_file_list_entries(&list).unwrap();
+    assert_eq!(
+        entries,
+        vec![
+            PathBuf::from("photos/a.jpg"),
+            PathBuf::from("photos/b.jpg"),
+            PathBuf::from("\"odd.jpg"),
+        ]
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn file_list_keeps_trailing_backslashes() {
+    let root = unique_test_dir("file-list-backslash");
+    fs::create_dir_all(&root).unwrap();
+    let list = root.join("file.list");
+    // `dir\` is a legitimate Unix file name; only '/' marks a directory.
+    fs::write(&list, "dir\\\ndir/\n").unwrap();
+
+    let entries = read_file_list_entries(&list).unwrap();
+    assert_eq!(entries, vec![PathBuf::from("dir\\"), PathBuf::from("dir")]);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn file_list_beyond_the_size_cap_is_rejected() {
+    let root = unique_test_dir("file-list-huge");
+    fs::create_dir_all(&root).unwrap();
+    let list = root.join("file.list");
+    fs::write(&list, vec![b'x'; (MAX_FILE_LIST_BYTES + 2) as usize]).unwrap();
+
+    let error = read_file_list_entries(&list).unwrap_err();
+    assert!(error.contains("size limit"), "{error}");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn expand_file_lists_uses_only_lists_and_ignores_other_inputs() {
     let root = unique_test_dir("expand-file-list");
     fs::create_dir_all(root.join("photos")).unwrap();
@@ -291,6 +339,32 @@ fn expand_file_lists_without_lists_keeps_all_inputs() {
     expected.sort();
     assert_eq!(files, expected);
     fs::remove_dir_all(root).unwrap();
+}
+
+/// Win32 strips trailing dots and spaces from file names before writing, so
+/// accepting them would silently redirect the output to a different file —
+/// and "CON .png" would normalise onto the reserved CON device.
+#[cfg(windows)]
+#[test]
+fn windows_output_names_cannot_end_in_a_dot_or_space() {
+    for bad in ["out.", "out ", "out. ", "CON .png", "con.txt", "NUL."] {
+        assert!(
+            validate_output_file_name(OsStr::new(bad)).is_err(),
+            "{bad:?} must be rejected"
+        );
+    }
+    for ok in [
+        "out.jpg",
+        "out .jpg",
+        "out..jpg",
+        "concepts.png",
+        "logo.png",
+    ] {
+        assert!(
+            validate_output_file_name(OsStr::new(ok)).is_ok(),
+            "{ok:?} must be accepted"
+        );
+    }
 }
 
 #[cfg(unix)]

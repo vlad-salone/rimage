@@ -1,7 +1,8 @@
 [package]
 name          = "rimage"
-version       = "0.12.4"
+version       = "0.13.0"
 edition       = "2024"
+rust-version  = "1.95.0"
 description   = "Optimize images natively with best-in-class codecs"
 license       = "MIT OR Apache-2.0"
 readme        = "README.md"
@@ -41,6 +42,7 @@ default = [
     "webp",
     "avif",
     "tiff",
+    "svg",
     "threads",
     "metadata",
 ]
@@ -51,7 +53,7 @@ build-binary = [
     "dep:clap",
     "dep:indoc",
     "dep:rayon",
-    "dep:pretty_env_logger",
+    "dep:env_logger",
     "dep:zune-imageprocs",
     "dep:glob",
     "zune-image/default",
@@ -70,6 +72,7 @@ threads = [
     "oxipng?/parallel",
     "fast_image_resize?/rayon",
     "ravif?/threading",
+    "yuvutils-rs?/rayon",
     "zune-image/threads",
 ]
 # Enables metadata support
@@ -87,17 +90,29 @@ oxipng = ["dep:oxipng"]
 # Enables webp codec
 webp = ["dep:webp"]
 # Enables avif codec
-avif = ["dep:ravif", "dep:libavif", "dep:rgb"]
+avif = [
+    "dep:ravif",
+    "dep:rgb",
+    "dep:dav1d",
+    "dep:avif-parse",
+    "dep:yuvutils-rs",
+]
 # Enables tiff codec
 tiff    = ["dep:tiff"]
+# Enables SVG input support (rendered via resvg)
+svg = ["dep:resvg", "dep:skrifa"]
 icc     = ["dep:lcms2"]
 console = ["dep:console"]
+# Enables runtime system-resource probing, used to derive image size limits
+limits = ["dep:sysinfo"]
 
 [dependencies]
 log = "0.4"
-zune-core = { version = "0.5.1", features = ["std"] }
+# zune-core 0.5.3 would cause build error.
+# REF: https://github.com/etemesi254/zune-image/issues/439
+zune-core = { version = "=0.5.1", features = ["std"] }
 zune-image = { version = "0.5.0", features = ["simd"] }
-fast_image_resize = { version = "6.0", optional = true }
+fast_image_resize = { version = "6.1", optional = true }
 imagequant = { version = "4.4", default-features = false, optional = true }
 rgb = { version = "0.8", optional = true }
 mozjpeg = { version = "0.10.13", default-features = false, features = [
@@ -108,19 +123,30 @@ oxipng = { version = "10.1.1", default-features = false, features = [
 ], optional = true }
 webp = { version = "0.3", default-features = false, optional = true }
 ravif = { version = "0.13.0", optional = true }
-libavif = { version = "0.14.0", default-features = false, features = [
-    "codec-aom",
-], optional = true }
-lcms2 = { version = "6.1", optional = true }
+dav1d = { version = "0.11", optional = true }
+avif-parse = { version = "2.1", optional = true }
+yuvutils-rs = { version = "0.8", optional = true }
+lcms2 = { version = "6.2", optional = true }
 tiff = { version = "0.11.3", default-features = false, features = [
     "lzw",
 ], optional = true }
+resvg = { version = "0.48.1", default-features = false, features = [
+    "text",
+    "system-fonts",
+    "raster-images",
+], optional = true }
+skrifa = { version = "0.46.2", default-features = false, features = [
+    "std",
+], optional = true }
+
+# System resource probing for dynamic image size limits
+sysinfo = { version = "0.39.6", optional = true }
 
 # cli
 anyhow = { version = "1.0", optional = true }
 clap = { version = "4.6", features = ["cargo", "string"], optional = true }
 indoc = { version = "2.0", optional = true }
-pretty_env_logger = { version = "0.5.0", optional = true }
+env_logger = { version = "0.11", optional = true, default-features = false, features = ["auto-color"] }
 rayon = { version = "1.12.0", optional = true }
 zune-imageprocs = { version = "0.5.1", features = [
     "exif",

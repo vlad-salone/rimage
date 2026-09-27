@@ -7,19 +7,8 @@ linker = 'aarch64-linux-gnu-gcc'
 [target.aarch64-unknown-linux-musl]
 linker = 'aarch64-linux-musl-gcc'
 
-[target.x86_64-pc-windows-gnu]
-linker = 'gcc'
-rustflags = [
-    "-C", "target-feature=+crt-static",
-    "-C", "link-arg=-static-libgcc",
-    "-C", "link-arg=-static-libstdc++",
-]
-
-[env]
-CMAKE_GENERATOR_x86_64-pc-windows-gnu = "MinGW Makefiles"
-CC_x86_64-pc-windows-gnu = "gcc"
-CXX_x86_64-pc-windows-gnu = "g++"
-AR_x86_64-pc-windows-gnu = "ar"
+[target.i686-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
 
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]

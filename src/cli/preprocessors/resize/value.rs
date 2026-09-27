@@ -100,6 +100,28 @@ fn parse_length(s: &str, marker: char) -> Result<usize, anyhow::Error> {
     Ok(length)
 }
 
+/// Parses a positive, finite scale factor for the `@` and `%` forms.
+///
+/// `f32` parsing accepts strings like `nan` and `inf`, and a zero or negative
+/// factor maps every image onto a degenerate target: NaN and negatives become
+/// 0 in the float-to-`usize` cast, and infinity saturates to `usize::MAX`.
+/// Those failures only surface inside the resize operation, far from the
+/// input that caused them, so they are rejected here instead.
+fn parse_scale(s: &str) -> Result<f32, anyhow::Error> {
+    let scale: f32 = s
+        .trim()
+        .parse()
+        .map_err(|_| anyhow!("Invalid resize value"))?;
+
+    if !scale.is_finite() || scale <= 0.0 {
+        return Err(anyhow!(
+            "Resize scale factor should be a positive, finite number"
+        ));
+    }
+
+    Ok(scale)
+}
+
 impl std::fmt::Display for ResizeValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -124,8 +146,8 @@ impl std::str::FromStr for ResizeValue {
         let s = s.trim().to_lowercase();
 
         match s {
-            s if s.starts_with('@') => Ok(Self::Multiplier(s[1..].parse()?)),
-            s if s.ends_with('%') => Ok(Self::Percentage(s[..s.len() - 1].parse()?)),
+            s if s.starts_with('@') => Ok(Self::Multiplier(parse_scale(&s[1..])?)),
+            s if s.ends_with('%') => Ok(Self::Percentage(parse_scale(&s[..s.len() - 1])?)),
             s if ANCHOR_MARKERS
                 .iter()
                 .filter(|marker| s.contains(**marker))
@@ -143,12 +165,32 @@ impl std::str::FromStr for ResizeValue {
             s if s.contains('x') => {
                 let dimensions: Vec<&str> = s.split('x').collect();
                 if dimensions.len() > 2 {
-                    return Err(anyhow!("There is more that 2 dimensions"));
+                    return Err(anyhow!("There is more than 2 dimensions"));
                 }
 
-                let width = Some(dimensions[0].parse::<usize>()?);
+                // An empty dimension half (e.g. "x100" or "100x") produces a
+                // parse error with an unhelpful message. Surface a clear
+                // error naming the missing value.
+                let width = Some(dimensions[0].parse::<usize>().map_err(|_| {
+                    anyhow!(
+                        "Invalid resize width '{}': expected a positive integer",
+                        dimensions[0]
+                    )
+                })?);
 
-                let height = Some(dimensions[1].parse::<usize>()?);
+                let height = Some(dimensions[1].parse::<usize>().map_err(|_| {
+                    anyhow!(
+                        "Invalid resize height '{}': expected a positive integer",
+                        dimensions[1]
+                    )
+                })?);
+
+                // `parse_length` rejects a zero length for the anchored forms
+                // because it can never produce a valid image; the WxH form is
+                // held to the same rule.
+                if width == Some(0) || height == Some(0) {
+                    return Err(anyhow!("Resize dimensions should be greater than 0"));
+                }
 
                 Ok(Self::Dimensions(width, height))
             }
@@ -334,6 +376,32 @@ mod tests {
         assert!("0h".parse::<ResizeValue>().is_err());
         assert!("0l".parse::<ResizeValue>().is_err());
         assert!("0s".parse::<ResizeValue>().is_err());
+    }
+
+    #[test]
+    fn from_str_rejects_zero_dimensions_in_wxh_form() {
+        // The anchored forms reject a zero length; the WxH form follows the
+        // same rule instead of failing later inside the resize operation.
+        for value in ["0x100", "100x0", "0x0"] {
+            assert!(
+                value.parse::<ResizeValue>().is_err(),
+                "{value} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn from_str_rejects_non_positive_or_non_finite_scale_factors() {
+        // NaN and negative factors cast to a zero size, infinity saturates to
+        // usize::MAX; all of them must fail at parse time, not mid-pipeline.
+        for value in [
+            "@0", "@-2", "@nan", "@inf", "@-inf", "0%", "-5%", "nan%", "inf%",
+        ] {
+            assert!(
+                value.parse::<ResizeValue>().is_err(),
+                "{value} should be rejected"
+            );
+        }
     }
 
     #[test]

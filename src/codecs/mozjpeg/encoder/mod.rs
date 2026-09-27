@@ -1,4 +1,4 @@
-use std::{io, mem, panic::AssertUnwindSafe};
+use std::{io, panic::AssertUnwindSafe};
 
 use mozjpeg::qtable::QTable;
 use zune_core::{bit_depth::BitDepth, bytestream::ZByteWriterTrait, colorspace::ColorSpace};
@@ -35,6 +35,7 @@ pub struct MozJpegOptions {
 #[derive(Default)]
 pub struct MozJpegEncoder {
     options: MozJpegOptions,
+    pixel_density: Option<mozjpeg::PixelDensity>,
 }
 
 struct TempVt<T: ZByteWriterTrait> {
@@ -92,7 +93,22 @@ impl MozJpegEncoder {
 
     /// Create a new encoder with specified options
     pub fn new_with_options(options: MozJpegOptions) -> MozJpegEncoder {
-        MozJpegEncoder { options }
+        MozJpegEncoder {
+            options,
+            pixel_density: None,
+        }
+    }
+
+    /// Set the JFIF pixel density written into the encoded JPEG.
+    ///
+    /// The value is consumed by the next encode: an encoder used for more
+    /// than one image writes the density only into the first file.
+    ///
+    /// When this is not called, mozjpeg writes its default 1x1 aspect-ratio
+    /// JFIF header, which shows up as X/Y Resolution 1 and Resolution Unit
+    /// None in tools like ExifTool.
+    pub fn set_pixel_density(&mut self, density: mozjpeg::PixelDensity) {
+        self.pixel_density = Some(density);
     }
 }
 
@@ -107,6 +123,21 @@ impl EncoderTrait for MozJpegEncoder {
         sink: T,
     ) -> Result<usize, ImageErrors> {
         let (width, height) = image.dimensions();
+
+        // The CLI restricts quality to 1..=100, but the library API accepts
+        // any f32. mozjpeg's own range assertion would panic — unwindable
+        // only because of the catch below, and fatal under the release
+        // profile's panic = "abort" — so validate before touching the FFI.
+        // Range::contains is false for NaN, which rules that out too.
+        if !(1.0..=100.0).contains(&self.options.quality) {
+            return Err(ImageErrors::EncodeErrors(ImgEncodeErrors::Generic(
+                format!(
+                    "mozjpeg quality must be in 1..=100, got {}",
+                    self.options.quality
+                ),
+            )));
+        }
+
         if image.is_animated() {
             log::warn!(
                 "MozJpeg does not support animated images, only the first frame will be encoded"
@@ -133,7 +164,6 @@ impl EncoderTrait for MozJpegEncoder {
                 ColorSpace::BGR => mozjpeg::ColorSpace::JCS_EXT_BGR,
                 ColorSpace::BGRA => mozjpeg::ColorSpace::JCS_EXT_BGRA,
                 ColorSpace::ARGB => mozjpeg::ColorSpace::JCS_EXT_ARGB,
-                ColorSpace::Unknown => mozjpeg::ColorSpace::JCS_UNKNOWN,
                 _ => mozjpeg::ColorSpace::JCS_UNKNOWN,
             };
 
@@ -205,6 +235,10 @@ impl EncoderTrait for MozJpegEncoder {
                 comp.set_chroma_qtable(qtable)
             }
 
+            if let Some(density) = self.pixel_density.take() {
+                comp.set_pixel_density(density);
+            }
+
             let writer = TempVt {
                 inner: sink,
                 bytes_written: 0,
@@ -224,14 +258,22 @@ impl EncoderTrait for MozJpegEncoder {
             Ok(comp.finish()?.bytes_written)
         }))
         .map_err(|err| {
-            if let Ok(mut err) = err.downcast::<String>() {
-                ImageErrors::EncodeErrors(zune_image::errors::ImgEncodeErrors::Generic(mem::take(
-                    &mut *err,
-                )))
-            } else {
-                ImageErrors::EncodeErrors(zune_image::errors::ImgEncodeErrors::GenericStatic(
-                    "Unknown error occurred during encoding",
-                ))
+            // Preserve the panic payload whether it was raised as a String
+            // or a &'static str; only a foreign payload type falls back to
+            // the generic message.
+            let message = err
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| err.downcast_ref::<&'static str>().map(|text| (*text).to_string()));
+            match message {
+                Some(text) => {
+                    ImageErrors::EncodeErrors(zune_image::errors::ImgEncodeErrors::Generic(text))
+                }
+                None => ImageErrors::EncodeErrors(
+                    zune_image::errors::ImgEncodeErrors::GenericStatic(
+                        "Unknown error occurred during encoding",
+                    ),
+                ),
             }
         })?
     }

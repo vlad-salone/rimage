@@ -3,6 +3,14 @@ use std::io::{Read, Seek};
 use zune_core::colorspace::ColorSpace;
 use zune_image::{errors::ImageErrors, image::Image, traits::DecoderTrait};
 
+/// Upper bound on the pixel count of a TIFF this decoder will accept.
+///
+/// The CLI pre-checks dimensions via `limits`, but the library entry point is
+/// reachable directly. A file that declares gigantic dimensions would make
+/// `read_image` allocate them before the tiff crate's own checks run. 100 MP
+/// is generous for photography and blocks the gigapixel OOM attack.
+const MAX_TIFF_PIXELS: u64 = 100_000_000;
+
 /// A Tiff decoder
 pub struct TiffDecoder<R: Read + Seek> {
     inner: tiff::decoder::Decoder<R>,
@@ -35,23 +43,37 @@ where
         })?;
 
         let (width, height) = (width as usize, height as usize);
+
+        // Reject an oversized image before `read_image` allocates it. The
+        // tiff crate trusts the declared dimensions.
+        let pixels = (width as u64).checked_mul(height as u64);
+        match pixels {
+            Some(p) if p <= MAX_TIFF_PIXELS => {}
+            _ => {
+                return Err(ImageErrors::ImageDecodeErrors(format!(
+                    "TIFF dimensions {width}x{height} exceed the {MAX_TIFF_PIXELS} pixel limit"
+                )));
+            }
+        }
+
         self.dimensions = Some((width, height));
 
-        let colorspace = self
-            .inner
-            .colortype()
-            .map(|colortype| match colortype {
-                tiff::ColorType::RGB(_) => ColorSpace::RGB,
-                tiff::ColorType::RGBA(_) => ColorSpace::RGBA,
-                tiff::ColorType::CMYK(_) => ColorSpace::CMYK,
-                tiff::ColorType::Gray(_) => ColorSpace::Luma,
-                tiff::ColorType::GrayA(_) => ColorSpace::LumaA,
-                tiff::ColorType::YCbCr(_) => ColorSpace::YCbCr,
-                _ => ColorSpace::Unknown,
-            })
-            .map_err(|e| {
-                ImageErrors::ImageDecodeErrors(format!("Unable to read colorspace - {e}"))
-            })?;
+        let colortype = self.inner.colortype().map_err(|e| {
+            ImageErrors::ImageDecodeErrors(format!("Unable to read colorspace - {e}"))
+        })?;
+        let colorspace = match colortype {
+            tiff::ColorType::RGB(_) => ColorSpace::RGB,
+            tiff::ColorType::RGBA(_) => ColorSpace::RGBA,
+            tiff::ColorType::CMYK(_) => ColorSpace::CMYK,
+            tiff::ColorType::Gray(_) => ColorSpace::Luma,
+            tiff::ColorType::GrayA(_) => ColorSpace::LumaA,
+            tiff::ColorType::YCbCr(_) => ColorSpace::YCbCr,
+            other => {
+                return Err(ImageErrors::ImageDecodeErrors(format!(
+                    "Unsupported TIFF color type: {other:?}"
+                )));
+            }
+        };
 
         self.colorspace = colorspace;
 

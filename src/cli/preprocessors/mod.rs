@@ -1,5 +1,3 @@
-#![allow(unused_imports)]
-
 use clap::{Arg, ArgAction, ArgGroup, Command, arg, value_parser};
 use indoc::indoc;
 

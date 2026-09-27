@@ -10,6 +10,12 @@ use zune_image::{
 
 /// Apply icc profile
 pub struct ApplyICC {
+    // The Mutex is broader than the single `&profile` borrow `Transform::new`
+    // needs, but lcms2's `Transform<'a>` is lifetime-bound to the profiles
+    // it was built from, so the guard cannot be released while the transform
+    // is alive. In this program each worker constructs its own `ApplySRGB`
+    // instance, so the lock is never contended; it exists only so a shared
+    // instance stays sound across threads.
     profile: Mutex<Profile<GlobalContext>>,
 }
 
@@ -100,7 +106,9 @@ impl OperationsTrait for ApplyICC {
                     let mut bytes = frame.u16_to_native_endian();
                     t.transform_in_place(&mut bytes);
                     let samples = bytes
-                        .chunks_exact(2)
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
                         .map(|sample| u16::from_ne_bytes([sample[0], sample[1]]))
                         .collect::<Vec<_>>();
                     *frame = Frame::from_u16(&samples, colorspace, numerator, denominator);
@@ -152,7 +160,9 @@ impl OperationsTrait for ApplySRGB {
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         if image.metadata().icc_chunk().is_none() {
-            log::warn!("No icc profile in the image, skipping");
+            // Routine path for images without an embedded profile, so this is
+            // debug-level to stay quiet under the default warn-level logging.
+            log::debug!("No icc profile in the image, skipping");
             return Ok(());
         }
 

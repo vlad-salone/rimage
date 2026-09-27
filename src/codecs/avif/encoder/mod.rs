@@ -86,6 +86,29 @@ impl EncoderTrait for AvifEncoder {
 
         let mut writer = ZWriter::new(sink);
 
+        // `as_rgb()`/`as_rgba()` panic when the buffer length is not a
+        // multiple of the channel count, and ravif trusts the dimensions it
+        // is handed. An `Image` whose buffer disagrees with its own
+        // dimensions would otherwise panic in a worker thread — an abort
+        // under the release profile — so check the buffer against the
+        // dimensions first.
+        let components = image.colorspace().num_components();
+        let expected = width
+            .checked_mul(height)
+            .and_then(|pixels| pixels.checked_mul(components));
+        if expected != Some(data.len()) {
+            return Err(ImageErrors::EncodeErrors(
+                ImgEncodeErrors::ImageEncodeErrors(format!(
+                    "image buffer holds {} bytes, but {}x{} {:?} requires {}",
+                    data.len(),
+                    width,
+                    height,
+                    image.colorspace(),
+                    expected.map_or_else(|| "more than usize::MAX".to_string(), |n| n.to_string()),
+                )),
+            ));
+        }
+
         let encoder = ravif::Encoder::new()
             .with_quality(self.options.quality)
             .with_alpha_quality(self.options.alpha_quality.unwrap_or(self.options.quality))
@@ -128,6 +151,8 @@ impl EncoderTrait for AvifEncoder {
         &[ColorSpace::RGB, ColorSpace::RGBA]
     }
 
+    // zune's `ImageFormat` has no AVIF variant, so `Unknown` is the only
+    // honest answer until one exists upstream.
     fn format(&self) -> ImageFormat {
         ImageFormat::Unknown
     }

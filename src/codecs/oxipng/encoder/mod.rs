@@ -42,6 +42,14 @@ impl EncoderTrait for OxiPngEncoder {
     ) -> Result<usize, ImageErrors> {
         let (width, height) = image.dimensions();
 
+        // PNG stores dimensions as 32-bit; `width as u32` would silently
+        // truncate on a hypothetical >4 Gpx image and hand oxipng wrong
+        // dimensions with the full buffer. Reject it instead.
+        let (width_u32, height_u32) = (
+            u32::try_from(width).map_err(|_| dimension_overflow(width, height))?,
+            u32::try_from(height).map_err(|_| dimension_overflow(width, height))?,
+        );
+
         if image.is_animated() {
             log::warn!(
                 "OxiPNG does not support animated images, only the first frame will be encoded"
@@ -73,8 +81,8 @@ impl EncoderTrait for OxiPngEncoder {
 
         #[allow(unused_mut)]
         let mut img = oxipng::RawImage::new(
-            width as u32,
-            height as u32,
+            width_u32,
+            height_u32,
             match image.colorspace() {
                 ColorSpace::Luma => oxipng::ColorType::Grayscale {
                     transparent_shade: None,
@@ -150,6 +158,13 @@ impl EncoderTrait for OxiPngEncoder {
             _ => BitDepth::Eight,
         }
     }
+}
+
+/// Build the encode error for a dimension that does not fit in PNG's u32.
+fn dimension_overflow(width: usize, height: usize) -> ImageErrors {
+    ImageErrors::EncodeErrors(ImgEncodeErrors::ImageEncodeErrors(format!(
+        "image dimensions {width}x{height} exceed the PNG u32 limit"
+    )))
 }
 
 #[cfg(test)]

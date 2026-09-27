@@ -10,6 +10,10 @@ pub mod mozjpeg;
 #[cfg(feature = "oxipng")]
 pub mod oxipng;
 
+/// SVG input support
+#[cfg(feature = "svg")]
+pub mod svg;
+
 /// Tiff encoding support
 #[cfg(feature = "tiff")]
 pub mod tiff;

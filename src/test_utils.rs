@@ -1,3 +1,8 @@
+// Fixtures shared by the codec encoder tests. Which of them are used depends
+// on which codec features are enabled, so every one of them is unused in some
+// configurations — that is expected, not a defect to report.
+#![allow(dead_code)]
+
 use zune_core::{
     bit_depth::{BitDepth, BitType},
     colorspace::ColorSpace,

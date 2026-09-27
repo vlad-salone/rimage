@@ -1,6 +1,7 @@
 use std::{
     ffi::{OsStr, OsString},
     fs,
+    io::Read,
     path::{Component, Path, PathBuf},
 };
 
@@ -142,14 +143,23 @@ fn validate_output_file_name(name: &OsStr) -> Result<(), String> {
             .to_str()
             .ok_or_else(|| "Output file name is not valid Unicode on Windows".to_string())?;
         if text.is_empty()
-            || text.ends_with([' ', '.'])
             || text.chars().any(|c| {
                 c <= '\u{1f}' || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
             })
         {
             return Err(format!("Output file name {text:?} is not valid on Windows"));
         }
-        let base = text.split('.').next().unwrap_or_default();
+        // Win32 silently strips trailing dots and spaces from file names,
+        // so "out." and "out " would be written as "out" — a different file
+        // than the one reported, and possibly one that aliases a reserved
+        // device name ("CON .png" normalises to the reserved "CON").
+        let stripped = text.trim_end_matches([' ', '.']);
+        if stripped.len() != text.len() {
+            return Err(format!(
+                "Output file name {text:?} ends with a dot or space, which Windows silently strips"
+            ));
+        }
+        let base = stripped.split('.').next().unwrap_or_default().trim_end();
         let reserved = matches!(
             base.to_ascii_uppercase().as_str(),
             "CON"
@@ -260,7 +270,12 @@ fn normalize_lexically(path: &Path) -> PathBuf {
             Component::CurDir => {}
             Component::ParentDir => {
                 if !result.pop() {
-                    log::debug!("path {} escapes its root; clamped", path.display());
+                    // The path is being rewritten to somewhere the user did
+                    // not ask for; that is worth more than a debug line.
+                    log::warn!(
+                        "path {} escapes its root; the leading `..` was dropped",
+                        path.display()
+                    );
                 }
             }
             other => result.push(other.as_os_str()),
@@ -362,30 +377,50 @@ fn is_file_list_path(path: &Path) -> bool {
         .is_some_and(|name| name.eq_ignore_ascii_case(FILE_LIST_NAME))
 }
 
+/// Largest accepted `file.list`, in bytes.
+///
+/// A list is a hand-written or tool-generated manifest of file paths; past
+/// this size something is wrong, and reading it unbounded could exhaust
+/// memory on a hostile or accidental giant file.
+const MAX_FILE_LIST_BYTES: u64 = 64 * 1024 * 1024;
+
 fn read_file_list_entries(path: &Path) -> Result<Vec<PathBuf>, String> {
-    let content = fs::read_to_string(path).map_err(|error| {
-        format!(
-            "Failed to read file list {} as UTF-8: {error}",
-            path.display()
-        )
-    })?;
+    let mut content = String::new();
+    fs::File::open(path)
+        .and_then(|file| {
+            file.take(MAX_FILE_LIST_BYTES + 1)
+                .read_to_string(&mut content)
+        })
+        .map_err(|error| {
+            format!(
+                "Failed to read file list {} as UTF-8: {error}",
+                path.display()
+            )
+        })?;
+    if content.len() as u64 > MAX_FILE_LIST_BYTES {
+        return Err(format!(
+            "File list {} exceeds the {} MiB size limit",
+            path.display(),
+            MAX_FILE_LIST_BYTES / 1024 / 1024
+        ));
+    }
     Ok(content
         .strip_prefix('\u{FEFF}')
         .unwrap_or(&content)
         .lines()
-        .map(|s| {
-            let s = s
-                .trim()
-                .trim_matches(['"', '\''])
-                .trim_end_matches(['\\', '/']);
-
-            if s.contains("\u{FFFD}") {
-                log::warn!(
-                    "Line {s} in `file.list` {} may not encoding with valid UTF-8.",
-                    path.display()
-                );
-            }
-            s
+        .map(|line| {
+            let line = line.trim();
+            // Strip one matched pair of surrounding quotes: Windows tools
+            // export paths quoted, but a file whose name genuinely starts
+            // or ends with a lone quote must keep it.
+            let line = match line.as_bytes() {
+                [b'"', .., b'"'] | [b'\'', .., b'\''] => &line[1..line.len() - 1],
+                _ => line,
+            };
+            // A trailing '/' marks a directory entry in exported lists.
+            // '\' is left alone: it is a legitimate file-name character on
+            // Unix, not a separator.
+            line.trim_end_matches('/')
         })
         .filter(|line| !line.is_empty())
         .map(PathBuf::from)

@@ -87,6 +87,25 @@ rimage mozjpeg --backup ./image.jpg
 rimage mozjpeg -d ./output -r ./inner/image.jpg ./image.jpg
 ```
 
+### Color fidelity and chroma subsampling
+
+`rimage mozjpeg` lets MozJPEG choose the chroma subsampling automatically. At
+typical quality levels it picks **2x2 (4:2:0)**, which discards three quarters
+of the chroma resolution to make the file smaller. A side effect is that highly
+saturated colors (for example a bright red) can come out visibly darker or
+duller than the original.
+
+If color fidelity matters more than file size, force 4:4:4 with:
+
+```sh
+rimage mozjpeg --subsample 1 ./image.jpg
+```
+
+`1` means 4:4:4 (no chroma subsampling), `2` means 4:2:0. The default
+quantization table is `NRobidoux`; if you are comparing output with tools that
+use the standard Annex K tables (such as ImageMagick), pass
+`--qtable AnnexK` to make the comparison closer.
+
 ### File lists
 
 To process many images without a long command line, create a UTF-8 text file named `file.list`
@@ -110,15 +129,15 @@ run before encoding. Operations execute in CLI argument order.
 `--resize` accepts one of the following value forms. Unless a fixed `WxH` is
 given, the aspect ratio is preserved:
 
-| Form  | Meaning                                                     | Example   | Result on 800x400 |
-| ----- | ----------------------------------------------------------- | --------- | ----------------- |
-| `WxH` | Fixed width and height, aspect ratio is not preserved       | `100x300` | `100x300`         |
-| `Ww`  | Anchor on the width, height follows the aspect ratio        | `100w`    | `100x50`          |
-| `hH`  | Anchor on the height, width follows the aspect ratio        | `200h`    | `400x200`         |
-| `Ll`  | Longest side becomes `L`, the other side follows            | `1000l`   | `1000x500`        |
-| `Ss`  | Shortest side becomes `S`, the other side follows           | `500s`    | `1000x500`        |
-| `@M`  | Scale by the multiplier `M`                                 | `@1.5`    | `1200x600`        |
-| `P%`  | Scale to `P` percent of the source                          | `50%`     | `400x200`         |
+| Form  | Meaning                                               | Example   | Result on 800x400 |
+| ----- | ----------------------------------------------------- | --------- | ----------------- |
+| `WxH` | Fixed width and height, aspect ratio is not preserved | `100x300` | `100x300`         |
+| `Ww`  | Anchor on the width, height follows the aspect ratio  | `100w`    | `100x50`          |
+| `hH`  | Anchor on the height, width follows the aspect ratio  | `200h`    | `400x200`         |
+| `Ll`  | Longest side becomes `L`, the other side follows      | `1000l`   | `1000x500`        |
+| `Ss`  | Shortest side becomes `S`, the other side follows     | `500s`    | `1000x500`        |
+| `@M`  | Scale by the multiplier `M`                           | `@1.5`    | `1200x600`        |
+| `P%`  | Scale to `P` percent of the source                    | `50%`     | `400x200`         |
 
 ```sh
 # Fixed dimensions: the image is resized to exactly 100x200
@@ -182,6 +201,15 @@ rimage mozjpeg --resize 2000l --resize 50% --reduce-only ./image.jpg  # 800x400 
 rimage mozjpeg --resize 1000l --filter nearest ./image.jpg
 ```
 
+SVG inputs are resized through the same `--resize` parameter. Instead of
+rasterizing the SVG at its intrinsic size and then resampling with
+`fast_image_resize`, the SVG is rendered vectorly with `resvg` directly at the
+final target size. Upscaling therefore keeps the vector quality of the source,
+and chained `--resize` values compose for SVG exactly as they do for raster
+images. `--filter` selects the raster resampling filter used by
+`fast_image_resize`; it is still accepted for SVG inputs (when `--resize` is
+present) but has no effect on vector SVG rendering.
+
 #### Quantization (color palette reduction)
 
 `--quantization` reduces the number of distinct colors in the image. It is **not** a
@@ -214,6 +242,30 @@ rimage mozjpeg --resize 64x64 --filter nearest --quantization 80 ./image.jpg
 
 Note that `--filter` applies to all `--resize` invocations, and `--dithering`
 applies to all `--quantization` invocations.
+
+### SVG input
+
+SVG files (and gzipped `.svgz`) are rendered through `resvg` before encoding,
+so an SVG can be fed to any output format. By default the SVG renders at its
+intrinsic size — taken from its `width`/`height`, falling back to the
+`viewBox`.
+
+Use `--resize` to control the rasterization size. The SVG is rasterized
+directly at the requested size, so sizing is **lossless at any scale**: edges,
+gradients and text stay exactly as sharp when you enlarge it. Chained
+`--resize` values compose for SVG exactly as they do for raster images, and
+the direction flags (`--reduce-only`, `--enlarge-only`) work for SVG too.
+
+```sh
+# Render a 100x50 SVG at 2x and encode it as PNG
+rimage png --resize @2 ./logo.svg
+
+# Render at a fixed width for a 2x-density asset, height follows
+rimage mozjpeg --resize 800w ./logo.svg
+```
+
+`--resize` affects `.svg`/`.svgz` inputs and raster images alike. `--filter`
+is a raster resampling filter and has no effect on vector SVG rendering.
 
 ### Advanced options
 
@@ -265,7 +317,7 @@ For library usage check [Docs.rs](https://docs.rs/rimage/latest/rimage/)
 
 | Image Codecs | Decoder       | Encoder                 | NOTE                                                 |
 | ------------ | ------------- | ----------------------- | ---------------------------------------------------- |
-| avif         | libavif       | ravif                   | Common features only, Static only                    |
+| avif         | dav1d         | ravif                   | Common features only, Static only                    |
 | bmp          | zune-bmp      | ❌                      | Input only                                           |
 | farbfeld     | zune-farbfeld | zune-farbfeld           |                                                      |
 | hdr          | zune-hdr      | zune-hdr                |                                                      |
@@ -275,6 +327,7 @@ For library usage check [Docs.rs](https://docs.rs/rimage/latest/rimage/)
 | ppm          | zune-ppm      | zune-ppm                |                                                      |
 | psd          | zune-psd      | ❌                      | Input only                                           |
 | qoi          | zune-qoi      | zune-qoi                |                                                      |
+| svg          | resvg         | ❌                      | Input only                                           |
 | tiff         | tiff          | ❌                      | Input only                                           |
 | webp         | webp          | webp                    | Static only                                          |
 
@@ -331,26 +384,33 @@ rimage png "D:\example.jpg" -s "suffix"  -d "D:\desktop\" # backslash at the end
    - During installation, select "Desktop development with C++" workload.
    - OR, just use `choco install visualstudio2026-workload-vctools` to install it.
 
-4. Install Perl:
-   - Download and install from [Strawberry Perl](https://strawberryperl.com/).
-   - OR, just use `choco install strawberryperl` to install it.
-
-5. Install cmake (OPTIONAL if you use the MSVC bundled version):
+4. Install cmake (OPTIONAL if you use the MSVC bundled version):
     - Download and install from [CMake](https://cmake.org/download/).
     - OR, just use `choco install cmake` to install it.
-    - OR, you can use the bundled cmake in MSVC, but please note that only 4.2.3+ could be used.
+    - OR, you can use the bundled cmake in MSVC, but please note that only **4.2.3** + could be used.
 
-6. Install nasm and yasm:
-   - Download and install from [nasm](https://www.nasm.us/) and [yasm](https://github.com/yasm/yasm/releases).
-   - OR, just use `choco install nasm` and `choco install yasm` to install them.
-   - **WARNING**: `libaom` requires older version of the nasm binary or yasm instead for a successful build, see [libavif-rs#122](https://github.com/njaard/libavif-rs/issues/122) for details.
+5. Install nasm (for the mozjpeg encoder's SIMD code):
+   - Download and install from [nasm](https://www.nasm.us/).
+   - OR, just use `choco install nasm` to install it.
 
-7. **WARNING** Avoid conflicts from perl:
-    - Remove `C:\Strawberry\c\bin` (Your Perl installation directory) from `$PATH$` to avoid conflicts with newer cmake version installed in step 5 (The bundled cmake in perl is outdated and would make build scripts get error).
+6. Install dav1d through [vcpkg](https://vcpkg.io/) (the AVIF decoder links a
+   static dav1d found through pkg-config):
 
-8. Make sure `$PATH`
-    - Make sure the cmake installed in step 5 is in your system `$PATH` and can be called from command line. You can check this by running `cmake --version` in your terminal, it should show the version of cmake you installed in step 5.
-    - Make sure Perl is in your system `$PATH` and can be called from command line. You can check this by running `perl --version` in your terminal, it should show the version of Perl you installed in step 4.
+    ```pwsh
+    vcpkg install dav1d:x64-windows-static pkgconf:x64-windows
+
+    # point the build at pkgconf and the dav1d package
+    $env:PKG_CONFIG = "$env:VCPKG_ROOT\installed\x64-windows\tools\pkgconf\pkgconf.exe"
+    $env:PKG_CONFIG_PATH = "$env:VCPKG_ROOT\installed\x64-windows-static\lib\pkgconfig"
+    ```
+
+    Use `x86-windows-static` instead of `x64-windows-static` when building for
+    the i686 target. To persist the two environment variables, add them with
+    `setx` or through the system settings.
+
+7. Make sure cmake is in your system `$PATH` and can be called from command
+   line. You can check this by running `cmake --version` in your terminal, it
+   should show the version of cmake you installed in step 4.
 
 9. Build / Test / Format the project:
 

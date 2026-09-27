@@ -57,12 +57,15 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-2025
             cross: false
+            rustflags: -C target-feature=+crt-static
           - target: i686-pc-windows-msvc
             os: windows-2025
             cross: false
+            rustflags: -C target-feature=+crt-static
           - target: x86_64-apple-darwin
             os: macos-15-intel
             cross: false
+            rustflags: -A linker_messages
           - target: aarch64-apple-darwin
             os: macos-15
             cross: false
@@ -70,6 +73,7 @@ jobs:
     env:
       CARGO_BUILD_TARGET: ${{ matrix.target }}
       CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER: qemu-aarch64 -L /usr/aarch64-linux-gnu
+      RUSTFLAGS: "-D warnings ${{ matrix.rustflags }}"
 
     steps:
       - name: checkout
@@ -101,20 +105,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          packages=(ninja-build meson nasm)
+          # meson+ninja build dav1d from source for the musl and aarch64 GNU
+          # targets, nasm assembles mozjpeg's x86 SIMD code
+          packages=(ninja-build meson nasm pkg-config)
           if [[ "${{ matrix.target }}" == *-musl ]]; then
             packages+=(musl-tools "musl-dev:${{ matrix.target-apt-arch }}")
           fi
           if [[ "${{ matrix.target }}" == aarch64-unknown-linux-* ]]; then
-            packages+=(qemu-user gcc-aarch64-linux-gnu g++-aarch64-linux-gnu "libc6:${{ matrix.target-apt-arch }}")
+            packages+=(qemu-user gcc-aarch64-linux-gnu "libc6:${{ matrix.target-apt-arch }}")
+          fi
+          if [[ "${{ matrix.target }}" == x86_64-unknown-linux-gnu ]]; then
+            packages+=(libdav1d-dev)
           fi
           sudo apt-get -yq update
           sudo apt-get -yq install --fix-missing "${packages[@]}"
-
-      - name: configure x86_64 musl C++ compiler
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        shell: bash
-        run: sudo ln -sf /bin/g++ /bin/musl-g++
 
       - name: install macOS dependencies
         if: startsWith(matrix.os, 'macos')
@@ -126,12 +130,21 @@ jobs:
           # Nothing in this build uses these taps, so untap them first.
           brew untap aws/tap 2>/dev/null || true
           brew untap azure/bicep 2>/dev/null || true
-          brew install ninja meson nasm yasm || brew upgrade ninja meson nasm yasm
+          brew install llvm ninja nasm pkg-config dav1d || brew upgrade llvm ninja nasm pkg-config dav1d
 
       - name: install Windows dependencies
         if: startsWith(matrix.os, 'windows')
         shell: pwsh
-        run: choco install -y ninja meson nasm
+        run: |
+          choco install -y ninja nasm
+          # static dav1d matches the +crt-static rustflag of the MSVC target;
+          # dav1d-sys locates it through pkgconf from the same vcpkg install.
+          # the runner images expose vcpkg only via VCPKG_INSTALLATION_ROOT,
+          # there is no VCPKG_ROOT
+          $triplet = if ('${{ matrix.target }}' -eq 'i686-pc-windows-msvc') { 'x86-windows-static' } else { 'x64-windows-static' }
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install "dav1d:$triplet" "pkgconf:x64-windows"
+          "PKG_CONFIG=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\tools\pkgconf\pkgconf.exe" >> $env:GITHUB_ENV
+          "PKG_CONFIG_PATH=$env:VCPKG_INSTALLATION_ROOT\installed\$triplet\lib\pkgconfig" >> $env:GITHUB_ENV
 
       - name: install Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -153,8 +166,34 @@ jobs:
         with:
           tool: cross@0.2.5
 
+      # musl and cross-compiled GNU targets have no dav1d package to link
+      # against; build a static dav1d with the target toolchain and point
+      # pkg-config at it. x86_64-gnu uses the distro package instead.
+      - name: build static dav1d for the target
+        if: startsWith(matrix.os, 'ubuntu') && !matrix.cross && matrix.target != 'x86_64-unknown-linux-gnu'
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ matrix.target }}" in
+            x86_64-unknown-linux-musl)
+              prefix=/opt/dav1d-target
+              export CC=musl-gcc
+              ;;
+            aarch64-unknown-linux-gnu)
+              prefix=/opt/dav1d-target
+              export CROSS_FILE=ci/meson/aarch64-gnu.ini
+              ;;
+          esac
+          ci/build-dav1d.sh "$prefix" ${CROSS_FILE:-}
+          {
+            echo "PKG_CONFIG_PATH=$prefix/lib/pkgconfig"
+            echo "PKG_CONFIG_ALLOW_CROSS=1"
+          } >> "$GITHUB_ENV"
+
       - name: build release binary
         shell: bash
+        env:
+          RUSTFLAGS: "-D warnings ${{ matrix.rustflags }}"
         run: |
           set -euo pipefail
           if [[ "${{ matrix.cross }}" == "true" ]]; then
@@ -163,17 +202,26 @@ jobs:
             cargo build --release --all-features
           fi
 
-      - name: run tests
+      - name: run code tests
         shell: bash
+        env:
+          RUSTFLAGS: "-D warnings ${{ matrix.rustflags }}"
         run: |
           set -euo pipefail
           if [[ "${{ matrix.cross }}" == "true" ]]; then
-            cross test --release --all-features --target "${{ matrix.target }}" -- --test-threads=1
-            cross test --release --all-features --target "${{ matrix.target }}" --doc
+            cross test --release --all-features --target "${{ matrix.target }}" --no-fail-fast -- --test-threads=1
           else
-            cargo nextest run --release --all-features
-            cargo test --doc --release --all-features
+            cargo nextest run --release --all-features --no-fail-fast
           fi
+
+      - name: run doc tests
+        if: ${{ matrix.target == 'x86_64-unknown-linux-gnu' }}
+        shell: bash
+        env:
+          RUSTFLAGS: "-D warnings ${{ matrix.rustflags }}"
+        run: |
+          set -euo pipefail
+          cargo test --release --all-features --doc
 
       - name: upload CLI binary
         if: github.event_name != 'pull_request'
@@ -208,13 +256,14 @@ jobs:
       - name: install native dependencies
         run: |
           sudo apt-get -yq update
-          sudo apt-get -yq install --fix-missing ninja-build meson nasm
+          sudo apt-get -yq install --fix-missing ninja-build nasm libdav1d-dev
 
       - name: Clippy check
         run: cargo clippy --all-targets --all-features -- -D warnings
 
   # Keep the complete WASM configuration in one disabled job. Remove the
-  # job-level `if` when the Emscripten build is ready to be enabled again.
+  # job-level `if` when the Emscripten build is ready to be enabled again;
+  # enabling it also requires a dav1d build for the Emscripten target.
   wasm:
     name: wasm32-unknown-emscripten (disabled)
     if: ${{ false }}
@@ -242,5 +291,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export EMSCRIPTEN_CMAKE_FILE="$(brew --cellar emscripten)/$(brew list --versions emscripten | tr ' ' '\n' | tail -1)/libexec/cmake/Modules/Platform/Emscripten.cmake"
           cargo check --all-features

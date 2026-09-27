@@ -2,7 +2,75 @@
 
 All notable changes to the Rimage library will be documented in this file.
 
-# 0.13.0
+# Unreleased
+
+### Breaking Changes
+
+- add SVG input support rendered through `resvg` (static SVG and gzipped SVGZ), usable with every output format
+- replace the `libavif` AVIF decoder with a `dav1d`-based one (`dav1d` + `avif-parse` + `yuvutils-rs`); decoding now links a system-installed `dav1d` (>= 1.3.0) through pkg-config instead of building libaom from source with cmake
+- report the side a failure happened on and give every outcome its own exit code: `0` success, `2` usage, `3` input, `4` output, `5` partial, with `1` left unused because the runtime reports it for a signal or abort, so wrappers keying off the previous `0`/`1` must be updated
+- raise the minimum supported Rust version to 1.95.0 (`rust-version`), required by the `sysinfo` dependency behind the new `limits` feature
+
+### Features
+
+- resize SVG inputs through the existing `--resize` option by rendering the SVG vectorly with `resvg` directly at the final target size, so upscaling keeps the vector quality of the source
+- load system fonts for SVG text and substitute missing fonts with a warning: the serif default and the CJK fallback are resolved once at load time from platform-appropriate seeds (Times New Roman/Liberation Serif/DejaVu Serif, etc., YaHei/PingFang/Noto CJK, etc.), the `serif` generic alias is pointed at a family that actually exists, and a text span is never dropped for the lack of a font — as a last resort it renders with whatever face the system has
+- derive the image size ceiling at runtime behind a new `limits` feature instead of hard-coding it: the ceiling is the intersection of the dimensions a format itself declares as a hard limit (WebP's 16383, AVIF's 65536, and for JPEG and PNG the limit their decoder actually enforces), the memory available to the process divided by `--threads` and the peak number of live pixel buffers, and the free space on the destination volume, and it now bounds every decode and encode path
+- reject oversized inputs from their file header before decoding, reading a bounded 64 KiB prefix: JPEG, PNG, AVIF, TIFF and WebP headers are probed for the dimensions they declare, so an image is refused before the allocation it would have caused
+- classify every pipeline failure by the side it happened on, the format it concerns and a stable `kind()` slug, with an actionable `hint` line, in place of the flat upstream enum that named neither direction nor format
+- add a hidden `--print-limits` diagnostic that reports the probed budget, the per-format caps, the per-stage cost multipliers and both the pixel and byte ceilings together with the source that produced each, then exits without touching a file
+
+### Bug Fixes
+
+- show warning-level logs by default without `RUST_LOG`; drop the spurious premultiply warning that fired on every run without `--premultiply` and demote the routine missing-ICC-profile notice to debug level
+- reject SVG render targets whose three live pixel buffers would exceed the decode budget instead of attempting multi-gigabyte allocations that could terminate the process through out-of-memory; the budget is now derived at runtime like every other ceiling, and the previous 512 MiB constant (currently 44,739,242 pixels) is kept as the fallback for standalone callers
+- replace the panics and unchecked arithmetic that would abort the whole process under the release profile's `panic = "abort"`: guard the AVIF decoder against allocation overflow and out-of-bounds plane access, validate the pixel buffer before handing it to `ravif`, clamp the number of used bits, and reject a buffer whose length disagrees with its dimensions instead of panicking in a worker thread
+- surface a failing `WebPConfig::new()` as an encoder-construction error instead of unwrapping it, and validate the MozJPEG quality at the library boundary, since the public options type accepts any `f32` while the encoder asserts on the rest
+- reject EXIF APP1 payloads above 65533 bytes, where the segment length used to overflow the `u16` and wrap into a malformed JPEG
+- guard the SVG render buffer allocation against `usize` overflow on 32-bit targets and with extremely large render targets
+- replace the premultiply `assert!` and five `indices_of().unwrap()` call sites with a warning and a defensive fallback, so a user-facing argument-ordering conflict can no longer terminate the run
+- keep JSON metadata finite when the aspect ratio of a zero-height image is computed, accept a logger that is already installed instead of panicking, and log the reason when the current directory cannot be read
+- preserve a source JPEG's EXIF by copying its APP1 segment verbatim, instead of decoding and re-encoding it through `little_exif`, which rejects valid files that store `ExifVersion` as a STRING rather than UNDEF
+- carry the source JPEG's JFIF pixel density into the MozJPEG output, instead of leaving the default 1x1 aspect-ratio header that tools report as a resolution of 1 with no unit
+- encode `--colorspace rgb` with `JCS_RGB` rather than `JCS_EXT_RGB`
+- cap the WebP and SVG decoder reads at 256 MiB and reject TIFF images above 100 MP before allocating, since a decoder used as a library was otherwise unbounded
+- reject dimensions that exceed the `u32` limit of the OxiPNG and WebP FFI entry points instead of silently truncating them on 64-bit hosts
+- derive the JPEG and PNG ceilings from the limit their decoder enforces rather than the larger encoder-side constant, so the pre-check no longer admits a file the decoder then refuses with an unrelated message
+- resolve the destination volume's free space against the nearest existing ancestor of the output path: canonicalizing a file that does not exist yet failed outright, and on Windows the verbatim prefix never matched the mount points `sysinfo` reports, leaving the disk check dead on that platform
+- divide the memory budget by `--threads` rather than an `RIMAGE_THREADS` variable that nothing sets, which left the divisor at 1 while the whole worker pool was in flight
+- report a memory-derived byte ceiling as a memory limit rather than a disk limit when free space happens to look tighter, and name the source that produced each ceiling
+- decode only the first frame of animated WebP and APNG instead of allocating a full-size buffer per frame; the still entry point is now tried first, which also stops forcing an alpha channel on files that do not have one, so such a file decodes as `RGB`
+- give encode failures an output-side hint instead of input-side advice about a truncated file, and stop printing the path twice in failure log lines
+- reject degenerate `--resize` values at parse time (the `@` and `%` forms accepted `@0`, `@-2`, `@nan`, `@inf`, `0%` and `-5%`, and the `WxH` form accepted zero dimensions) and name the offending dimension in the malformed `WxH` message
+- stop stripping surrounding quotes and trailing backslashes from every `file.list` line, which rewrote legitimate Unix file names, remove a warning that could never fire on valid UTF-8, and bound the list at 64 MiB
+- reject output names Windows would silently rewrite — trailing dots and spaces, and reserved device names such as `CON .png` — and escalate the silent root-escape clamp to a warning, since it rewrites where output lands
+- compile and lint cleanly with decoders and encoders trimmed: gate the `AvailableEncoders::encode` variants, the `File` declaration and the seek imports on the features that use them, and keep the no-codec and `limits`-disabled builds warning-free
+- generate the CLI help epilogue from the enabled features so a trimmed build stops advertising subcommands that do not exist
+- parse `--threads` as `u16` so hosts with more than 255 cores can actually use them
+- collapse the repeated metadata segment checks into match guards, clearing the remaining `cargo clippy --all-targets -- -D warnings` warnings
+
+### Improvements
+
+- cover the JPEG metadata scanner with tests built from synthetic segments, including the guard that keeps the first APP0/APP1 copy and the XMP-in-APP1 case that stops a bare APP1 marker from claiming the EXIF slot
+- replace the hand-written Newton integer square root with `u64::isqrt`
+- document why the ICC profile lock spans the transform, why the SVG intrinsic size is stored unrounded, and what `--subsample` values 3 and 4 do, and expand the subsampling introduction in the README and the MozJPEG CLI help
+- use `CARGO_MANIFEST_DIR` in the test fixtures instead of paths that only exist on one development machine
+- drop the unneeded `unsafe` from the AVIF `ftyp` test fixture, and make the input-side classification infallible so its callers no longer carry a dead fallback
+
+### Dependencies
+
+- add `sysinfo` behind the new `limits` feature, the only implementation of the cgroup-aware memory probe and the mount-point lookup the size ceilings depend on
+- drop `thiserror`, which `src/error.rs` never referenced
+- replace the unmaintained `pretty_env_logger` with `env_logger`, with the timestamp disabled to keep the compact single-line style
+
+### Build / CI
+
+- auto-detect the MSVC and Windows SDK versions in `ci/msvc-env.sh` instead of hard-coding paths that only exist on one machine, with `RIMAGE_MSVC_ROOT` and `RIMAGE_SDK_VER` overrides for non-standard layouts
+- support ARM64 hosts in the same script by parameterising the toolchain architecture, falling back to the x64-hosted cross tools that Windows on ARM runs emulated
+- pin the dav1d clone in the cross image and `build-dav1d.sh` to a verified commit, since upstream can re-point a tag, and add a usage check while dropping the GNU-only `realpath` dependency
+- declare the build script's actual inputs so the resource compilation no longer re-runs whenever any file in the package changes, and tolerate an unset `CARGO_CFG_TARGET_OS`
+
+# [0.13.0](https://github.com/SalOne22/rimage/compare/v0.12.4...v0.13.0) (2026-08-14)
 
 ### Breaking Changes
 
@@ -37,6 +105,7 @@ All notable changes to the Rimage library will be documented in this file.
 - write JSON metadata atomically and use saturating arithmetic for size and space-saved statistics
 - add end-to-end regression tests covering single-thread processing, recursive output layouts, backup collisions, existing-backup protection and non-zero exit codes
 - regenerate the AVIF test fixture
+- update install steps of dependencies for building on Windows
 
 ### Dependencies
 
