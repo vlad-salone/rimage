@@ -13,9 +13,11 @@ To get started with contributing, you'll need to:
 1. Fork the repository on GitHub.
 2. Clone your fork locally.
 3. Install Rust and Cargo (if you haven't already).
-4. Install CMake and NASM for C libraries build.
-5. Run `cargo build` to ensure everything builds properly.
+4. Install the native build tools: a C compiler, `nasm`, `pkg-config` and a `dav1d` development package. The install steps in [`.github/workflows/rimage.yml`](.github/workflows/rimage.yml) list the exact packages per platform.
+5. Run `cargo build --all-features` to ensure everything builds properly, binary included.
    > Note: On Windows, use a Visual Studio build environment like Developer PowerShell for VS 2019/2022.
+
+[`AGENTS.md`](AGENTS.md) holds the commands CI runs and the rules the code follows. It is written for coding agents, but it is also the shortest accurate description of the build for people.
 
 ## Making Changes
 

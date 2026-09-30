@@ -1,0 +1,79 @@
+{
+  "strictness": 2,
+  "commentTypes": [
+    "logic",
+    "syntax"
+  ],
+  "autoReview": [
+    "open",
+    "push"
+  ],
+  "statusCheck": true,
+  "excludeAuthors": [
+    "dependabot[bot]"
+  ],
+  "ignorePatterns": "tests/files/**\nLICENSE-*\nCODE_OF_CONDUCT.md",
+  "instructions": "rimage is an image optimization library and CLI in one crate: codecs and operations over zune_image, all behind Cargo features, and a clap binary behind `build-binary`. AGENTS.md is the rule book; review against it. rustfmt and clippy under -D warnings are the whole style guide, so do not comment on style beyond what they enforce. The release profile aborts on panic, so a reachable panic in the binary is a bug, not a nit.",
+  "rules": [
+    {
+      "id": "no-reachable-panic",
+      "rule": "The release profile is `panic = \"abort\"`. Flag `unwrap`, `expect`, `assert!`, indexing and unchecked arithmetic on any path an input file or a command-line argument can reach in the binary or a decoder. The fix is an error the run records, not a comment.",
+      "scope": ["src/**/*.rs"],
+      "severity": "high"
+    },
+    {
+      "id": "atomic-publish",
+      "rule": "Output is written to a temporary file next to the destination and published by rename. Flag any write to the final output path, any code that overwrites an existing `--backup` destination, and any removal of the input before the publish has succeeded.",
+      "scope": ["src/main.rs"],
+      "severity": "high"
+    },
+    {
+      "id": "worker-exit-paths",
+      "rule": "Every early exit from the per-file worker in `src/main.rs` goes through `fail_pipeline!` or `refuse_file!` so the exit code and summary stay truthful. Flag a bare `return` on a failure path. The `ConcurrencyLimiter` permit is acquired inside the worker closure; acquiring it on the main thread deadlocks with `-t 1`.",
+      "scope": ["src/main.rs", "src/cli/utils/threads.rs"],
+      "severity": "high"
+    },
+    {
+      "id": "feature-gates",
+      "rule": "Every codec and operation is gated in `Cargo.toml`, in `src/codecs/mod.rs` or `src/operations/mod.rs`, and in the CLI. CI only builds `--all-features`. Flag code that references an optional dependency or module without the matching `#[cfg(feature = ...)]`, and a new feature that is not documented in `Cargo.toml`.",
+      "scope": ["Cargo.toml", "src/**/*.rs"],
+      "severity": "medium"
+    },
+    {
+      "id": "limits-before-allocation",
+      "rule": "Size limits bound every decode and encode. A decoder checks the dimensions the header declares against the budget before it allocates. Flag a new decode or encode path that allocates from untrusted dimensions without going through `limits`.",
+      "scope": ["src/codecs/**", "src/cli/pipeline.rs", "src/limits.rs"],
+      "severity": "medium"
+    },
+    {
+      "id": "cli-order-and-paths",
+      "rule": "`operations()` returns a `BTreeMap<usize, ...>` keyed by argument index, which encodes CLI order; flag a change to how the keys are computed. Output paths are compared case-insensitively on every platform on purpose, and Windows-reserved names are refused; flag a change in `src/cli/utils/paths/` that is not explained against the comments there.",
+      "scope": ["src/cli/pipeline.rs", "src/cli/utils/paths/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "tests",
+      "rule": "A bug fix comes with a test that fails without it. Fixtures are built with `src/test_utils.rs`; `tests/files/` is reached through `CARGO_MANIFEST_DIR`, never a hard-coded path. End-to-end tests in `tests/` must pass in release mode under `--test-threads=1`.",
+      "scope": ["src/**/*.rs", "tests/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "changelog",
+      "rule": "A behaviour change adds one `-` bullet to `CHANGELOG.md` under `# Unreleased` (line 5), in `### Breaking Changes`, `### Features`, `### Bug Fixes` or `### Improvements`. Line 5 stays the release heading and the sections stay at `###`, because `deploy.yml` cuts the release notes from line 6 to the next `#` or `##` heading.",
+      "scope": ["CHANGELOG.md", "src/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "pinned-dependencies",
+      "rule": "`zune-core` is pinned to `=0.5.1` on purpose; flag a bump. `Cargo.lock` is never edited by hand and a feature PR does not run a blanket `cargo update`: the lock diff should hold only the crates the PR adds or bumps on purpose.",
+      "scope": ["Cargo.toml", "Cargo.lock"],
+      "severity": "low"
+    },
+    {
+      "id": "user-facing-text",
+      "rule": "User-facing text (README, rustdoc, CLI help, error messages, changelog) uses backticks on every identifier, flag and path and has no emoji. Commit subjects and PR titles are `type(scope): subject` with no emoji or gitmoji.",
+      "scope": ["README.md", "CHANGELOG.md", "CONTRIBUTING.md", "AGENTS.md", "src/**/*.rs"],
+      "severity": "low"
+    }
+  ]
+}

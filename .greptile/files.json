@@ -1,0 +1,18 @@
+{
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "description": "The rules of the repository: layout, build and CI commands, the constraints that are not visible from one file, tests, commits and changelog"
+    },
+    {
+      "path": ".github/workflows/rimage.yml",
+      "description": "What CI runs on each of the eight targets, and which native packages each one installs",
+      "scope": ["ci/**", "Cross.toml", ".cargo/**", ".github/**"]
+    },
+    {
+      "path": "src/exit.rs",
+      "description": "The exit codes and how the run verdict is accumulated; a failure path in the binary must end in one of them",
+      "scope": ["src/main.rs"]
+    }
+  ]
+}
