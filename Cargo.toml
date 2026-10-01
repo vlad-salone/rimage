@@ -111,7 +111,7 @@ limits = ["dep:sysinfo"]
 log = "0.4"
 # zune-core 0.5.3 would cause build error.
 # REF: https://github.com/etemesi254/zune-image/issues/439
-zune-core = { version = "=0.5.1", features = ["std"] }
+zune-core = { version = "=0.5.3", features = ["std"] }
 zune-image = { version = "0.5.0", features = ["simd"] }
 fast_image_resize = { version = "6.1", optional = true }
 imagequant = { version = "4.4", default-features = false, optional = true }
