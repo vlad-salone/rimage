@@ -605,7 +605,9 @@ fn expand_luma(sample: u32, used: usize, full_range: bool) -> f32 {
 fn expand_chroma(sample: u32, used: usize, full_range: bool) -> f32 {
     let mid = 1u32 << (used - 1);
     if full_range {
-        (sample as i32 - mid as i32) as f32 * 255.0 / mid as f32
+        // The midpoint is the neutral bias, not the full chroma range.
+        let span = (1u32 << used) - 1;
+        (sample as i32 - mid as i32) as f32 * 255.0 / span as f32
     } else {
         let floor = 16u32 << (used - 8);
         let span = 224u32 << (used - 8);
