@@ -131,7 +131,7 @@ lcms2 = { version = "6.2", optional = true }
 tiff = { version = "0.11.3", default-features = false, features = [
     "lzw",
 ], optional = true }
-resvg = { version = "0.48.1", default-features = false, features = [
+resvg = { version = "0.49.0", default-features = false, features = [
     "text",
     "system-fonts",
     "raster-images",
