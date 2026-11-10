@@ -2,6 +2,12 @@
 
 All notable changes to the Rimage library will be documented in this file.
 
+# Unreleased
+
+### Dependences
+
+- bump sysinfo and fix errors caused by its breaking changes, etc..
+
 # [0.14.0](https://github.com/SalOne22/rimage/compare/v0.13.0...v0.14.0) (2026-09-27)
 
 ### Breaking Changes
