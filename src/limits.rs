@@ -398,14 +398,12 @@ impl SystemBudget {
 fn probe_available_memory() -> u64 {
     use sysinfo::{MemoryRefreshKind, System};
 
-    let mut system = System::new();
+    let mut system = System::new().expect("Failed to initialize `System`.");
     system.refresh_memory_specifics(MemoryRefreshKind::nothing().with_ram());
 
     // `cgroup_limits()` is Linux-only and returns `None` elsewhere.
-    match system.cgroup_limits() {
-        Some(limits) if limits.total_memory > 0 => {
-            limits.free_memory.min(system.available_memory())
-        }
+    match system.cgroup_limits().expect("REASON") {
+        limits if limits.total_memory > 0 => limits.free_memory.min(system.available_memory()),
         _ => system.available_memory(),
     }
 }
@@ -431,12 +429,15 @@ pub fn free_space_at(path: &Path) -> Option<u64> {
 
     let target = canonicalize_existing_ancestor(path)?;
 
-    Disks::new_with_refreshed_list()
-        .list()
-        .iter()
-        .filter(|disk| target.starts_with(disk.mount_point()))
-        .max_by_key(|disk| disk.mount_point().as_os_str().len())
-        .map(|disk| disk.available_space())
+    if let Ok(disks) = Disks::new_with_refreshed_list() {
+        disks
+            .iter()
+            .filter(|disk| target.starts_with(disk.mount_point()))
+            .max_by_key(|disk| disk.mount_point().as_os_str().len())
+            .map(|disk| disk.available_space())
+    } else {
+        None
+    }
 }
 
 /// Canonicalize the nearest ancestor of `path` that exists.
