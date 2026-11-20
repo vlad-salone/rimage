@@ -398,12 +398,19 @@ impl SystemBudget {
 fn probe_available_memory() -> u64 {
     use sysinfo::{MemoryRefreshKind, System};
 
-    let mut system = System::new().expect("Failed to initialize `System`.");
+    let Ok(mut system) = System::new() else {
+        return 0;
+    };
     system.refresh_memory_specifics(MemoryRefreshKind::nothing().with_ram());
 
-    // `cgroup_limits()` is Linux-only and returns `None` elsewhere.
-    match system.cgroup_limits().expect("Failed to get available Memory size.") {
-        limits if limits.total_memory > 0 => limits.free_memory.min(system.available_memory()),
+    // `cgroup_limits()` is Linux-only and returns `None` when cgroups are not
+    // mounted, the memory controller is unavailable, or the files cannot be
+    // read. Resource probing is advisory, so fall back to sysinfo's ordinary
+    // available-memory value instead of aborting the whole image conversion.
+    match system.cgroup_limits() {
+        Some(limits) if limits.total_memory > 0 => {
+            limits.free_memory.min(system.available_memory())
+        }
         _ => system.available_memory(),
     }
 }
