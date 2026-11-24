@@ -1,4 +1,8 @@
-use std::fs::File;
+use std::{fs::File, io::Cursor};
+
+use zune_image::traits::EncoderTrait;
+
+use crate::codecs::avif::{AvifEncoder, AvifOptions};
 
 use super::*;
 
@@ -12,6 +16,49 @@ fn decode() {
 
     assert_eq!(img.dimensions(), (48, 80));
     assert_eq!(img.colorspace(), ColorSpace::RGBA);
+}
+
+#[test]
+fn full_range_rgb_round_trip_preserves_color() {
+    assert_color_round_trip(ColorSpace::RGB, [80, 140, 200, 255]);
+    assert_color_round_trip(ColorSpace::RGB, [200, 140, 80, 255]);
+}
+
+#[test]
+fn full_range_rgba_round_trip_preserves_color() {
+    assert_color_round_trip(ColorSpace::RGBA, [80, 140, 200, 128]);
+    assert_color_round_trip(ColorSpace::RGBA, [200, 140, 80, 128]);
+}
+
+fn assert_color_round_trip(colorspace: ColorSpace, expected: [u8; 4]) {
+    let pixels = expected[..colorspace.num_components()].repeat(16 * 8);
+    let image = Image::from_u8(&pixels, 16, 8, colorspace);
+    let mut encoder = AvifEncoder::new_with_options(AvifOptions {
+        quality: 100.0,
+        ..Default::default()
+    });
+    let mut encoded = Vec::new();
+    encoder.encode(&image, &mut encoded).unwrap();
+
+    // Keep this regression on the high-depth, full-range conversion path.
+    let parsed = avif_parse::read_avif(&mut encoded.as_slice()).unwrap();
+    let picture = decode_av1_stream(&parsed.primary_item).unwrap();
+    assert_eq!(picture.bits_per_component().unwrap().0, 10);
+    assert_eq!(picture.color_range(), Dav1dYuvRange::Full);
+
+    let decoder = AvifDecoder::try_new(Cursor::new(encoded)).unwrap();
+    let decoded = Image::from_decoder(decoder).unwrap();
+    assert_eq!(decoded.dimensions(), (16, 8));
+    assert_eq!(decoded.colorspace(), ColorSpace::RGBA);
+    for pixel in decoded.flatten_to_u8()[0].as_chunks::<4>().0 {
+        for channel in 0..3 {
+            assert!(
+                pixel[channel].abs_diff(expected[channel]) <= 2,
+                "expected {expected:?}, got {pixel:?}"
+            );
+        }
+        assert!(pixel[3].abs_diff(expected[3]) <= 1, "alpha: {}", pixel[3]);
+    }
 }
 
 #[test]
@@ -74,12 +121,49 @@ fn high_depth_bt2020_limited() {
 }
 
 #[test]
+fn twelve_bit_full_range_bt601_preserves_color() {
+    // RGB (80, 140, 200) encoded as full-range, 12-bit BT.601 YCbCr.
+    let y = u16_plane(&[2070; 4], 4, 2);
+    let u = u16_plane(&[2692; 4], 4, 2);
+    let v = u16_plane(&[1488; 4], 4, 2);
+    let planes = Planes {
+        y: &y,
+        y_stride: 4,
+        u: &u,
+        u_stride: 4,
+        v: &v,
+        v_stride: 4,
+        width: 2,
+        height: 2,
+        layout: PixelLayout::I444,
+    };
+
+    let mut rgba = [0u8; 16];
+    high_depth_ycbcr_to_rgba(
+        &planes,
+        12,
+        true,
+        &ColorTransform::Ycbcr {
+            kr: 0.299,
+            kb: 0.114,
+            standard: YuvStandardMatrix::Bt601,
+        },
+        &mut rgba,
+    );
+
+    for pixel in rgba.as_chunks::<4>().0 {
+        assert_eq!(*pixel, [80, 140, 200, 255]);
+    }
+}
+
+#[test]
 fn high_depth_ycgco_round_trip() {
     // forward YCgCo (H.273 matrix 8) of R=200 G=50 B=100 in the 8-bit domain:
-    // Y=100, Cg=-50, Co=+50, scaled into full-range 10-bit samples
-    let y = u16_plane(&[400; 32], 16, 4);
-    let u = u16_plane(&[412; 8], 8, 2);
-    let v = u16_plane(&[612; 8], 8, 2);
+    // Y=100, Cg=-50, Co=+50. Scale each by 1023/255, add the 512 chroma
+    // bias to Cg/Co, and round to the nearest integer.
+    let y = u16_plane(&[401; 32], 16, 4);
+    let u = u16_plane(&[311; 8], 8, 2);
+    let v = u16_plane(&[713; 8], 8, 2);
     let planes = Planes {
         y: &y,
         y_stride: 16,
@@ -115,6 +199,30 @@ fn high_depth_luma_expansion_bounds() {
     assert_eq!(expand_chroma(512, 10, false), 0.0);
     // full-range chroma is neutral at 512
     assert_eq!(expand_chroma(512, 10, true), 0.0);
+}
+
+#[test]
+fn full_range_chroma_expansion() {
+    // Full-range chroma has a half-range bias, but a full-range scale:
+    // H.273: C = (sample - 2^(bits - 1)) / (2^bits - 1), then scale by 255.
+    for (bits, sample, expected) in [
+        (10, 0, -127.624_63),
+        (10, 256, -63.812_317),
+        (10, 512, 0.0),
+        (10, 768, 63.812_317),
+        (10, 1023, 127.375_37),
+        (12, 0, -127.531_136),
+        (12, 1024, -63.765_568),
+        (12, 2048, 0.0),
+        (12, 3072, 63.765_568),
+        (12, 4095, 127.468_864),
+    ] {
+        let actual = expand_chroma(sample, bits, true);
+        assert!(
+            (actual - expected).abs() < 0.001,
+            "{bits}-bit sample {sample}: expected {expected}, got {actual}"
+        );
+    }
 }
 
 fn ftyp(major: &[u8; 4], compatible: &[&[u8; 4]]) -> Vec<u8> {
